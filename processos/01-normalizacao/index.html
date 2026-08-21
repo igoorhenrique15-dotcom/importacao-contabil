@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Processo 01 · Normalização</title>
+  <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body>
+  <main class="shell">
+    <div class="topbar">
+      <a class="back" href="../../index.html">← Voltar ao painel</a>
+      <span class="badge badge-live">Processo independente</span>
+    </div>
+
+    <header class="hero">
+      <div>
+        <span class="eyebrow">PROCESSO 01</span>
+        <h1>Normalização dos arquivos</h1>
+        <p>Transforma arquivos diferentes em uma estrutura única sem alterar o conteúdo original. Nesta primeira versão: CSV e TXT delimitado.</p>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="notice">
+        Estrutura normalizada: <b>data · descrição · valor · débito · crédito · documento · origem</b>. Você escolhe quais colunas do arquivo correspondem a cada campo.
+      </div>
+    </section>
+
+    <section class="grid section">
+      <article class="panel" data-source="banco">
+        <span class="step-label">FONTE A</span>
+        <h2>Arquivo do banco</h2>
+        <label class="dropzone">
+          <input id="file-banco" type="file" accept=".csv,.txt,text/csv,text/plain">
+          <b>Selecionar CSV/TXT do banco</b>
+          <div class="file-name" id="name-banco">Nenhum arquivo selecionado</div>
+        </label>
+        <div id="mapping-banco" class="mapping"></div>
+        <div class="actions">
+          <button id="normalize-banco" disabled>Normalizar banco</button>
+          <button id="reset-banco" class="secondary" disabled>Limpar</button>
+        </div>
+      </article>
+
+      <article class="panel" data-source="relatorio">
+        <span class="step-label">FONTE B</span>
+        <h2>Relatório do cliente</h2>
+        <label class="dropzone">
+          <input id="file-relatorio" type="file" accept=".csv,.txt,text/csv,text/plain">
+          <b>Selecionar CSV/TXT do relatório</b>
+          <div class="file-name" id="name-relatorio">Nenhum arquivo selecionado</div>
+        </label>
+        <div id="mapping-relatorio" class="mapping"></div>
+        <div class="actions">
+          <button id="normalize-relatorio" disabled>Normalizar relatório</button>
+          <button id="reset-relatorio" class="secondary" disabled>Limpar</button>
+        </div>
+      </article>
+
+      <article class="panel full">
+        <div class="section-heading">
+          <div>
+            <span class="step-label">SAÍDA</span>
+            <h2>Dados normalizados</h2>
+          </div>
+          <div class="actions">
+            <button id="export-all" disabled>Exportar CSV normalizado</button>
+          </div>
+        </div>
+        <div id="summary" class="summary"></div>
+        <div id="status" class="notice">Carregue ao menos um arquivo para começar.</div>
+        <div style="height:12px"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Origem</th><th>Data</th><th>Descrição</th><th>Valor</th><th>Débito</th><th>Crédito</th><th>Documento</th></tr>
+            </thead>
+            <tbody id="output-body"><tr><td colspan="7" class="empty">Nenhum dado normalizado.</td></tr></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
