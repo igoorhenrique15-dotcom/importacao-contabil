@@ -16,7 +16,10 @@ Status: **estrutura responsiva completa / primeira versão funcional do Processo
 - navegação completa entre os oito processos;
 - estrutura de entrada, processamento e saída preparada para as próximas automações;
 - menu móvel e estados acessíveis;
-- Processo 01 funcional para normalização e exportação local.
+- Processo 01 funcional para normalização, validação, retomada e exportação local;
+- Processo 02 funcional para fechamento diário banco × relatório;
+- contexto do lote e progresso persistidos somente no navegador;
+- contrato de dados compartilhado e trilha de auditoria local.
 
 Entrada:
 - arquivo do banco;
@@ -37,7 +40,7 @@ O processo permite mapear manualmente as colunas, normaliza datas e valores e ex
 ## Roadmap
 
 1. Normalização dos arquivos
-2. Fechamento diário banco × relatório
+2. Fechamento diário banco × relatório — **primeira automação funcional**
 3. Desmembramento dos pagamentos
 4. Identificação das notas fiscais
 5. Identificação das contas contábeis
