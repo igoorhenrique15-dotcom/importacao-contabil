@@ -37,6 +37,26 @@ Cada registro contém:
 - `complete`: concluída;
 - `warning`: concluída com pendências.
 
+## Encadeamento processual
+
+O lote possui um único conjunto lógico de lançamentos. Cada etapa recebe a
+saída persistida da anterior, preserva os campos existentes e acrescenta sua
+transformação:
+
+`01 → 02 → 03 → 04 → 05 → 06 → 07 → 08`
+
+- 01 cria os registros normalizados;
+- 02 acrescenta status e diferença do fechamento diário;
+- 03 acrescenta vínculos do desmembramento;
+- 04 acrescenta documento, confiança e correspondência;
+- 05 acrescenta contas e regra aplicada;
+- 06 acrescenta o histórico;
+- 07 acrescenta erros, avisos e aprovação;
+- 08 converte a última versão validada no layout final.
+
+Ao executar novamente uma etapa, os resultados das etapas posteriores são
+invalidados para impedir que uma exportação antiga seja usada com dados novos.
+
 ## Segurança e privacidade
 
 Arquivos e dados são processados localmente. Não devem ser adicionados ao

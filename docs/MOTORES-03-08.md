@@ -1,7 +1,7 @@
 # Motores dos processos 03 a 08
 
-Todos os motores são executados localmente no navegador e salvam seus resultados
-no lote ativo.
+Todos os motores são executados localmente no navegador, recebem a versão
+produzida pela etapa anterior e salvam uma nova versão enriquecida no lote.
 
 ## 03 — Desmembramento
 

@@ -18,8 +18,8 @@
   function run(){
     const base=inputs();if(!base.length){message('Este processo ainda não possui dados de entrada. Conclua e salve as etapas anteriores.','error');return}
     try{let result,config={},state='complete';
-      if(step===3){config={tolerance:parseBR(document.getElementById('engine-tolerance').value)};result=eng.splitPayments(base,config);if(!result.length)state='warning'}
-      if(step===4){config={tolerance:parseBR(document.getElementById('match-tolerance').value)};result=eng.matchDocuments(base,config);if(result.some(x=>x.status!=='confirmado'))state='warning'}
+      if(step===3){config={tolerance:parseBR(document.getElementById('engine-tolerance').value)};result=eng.splitPayments(base,config);if(!result.matches.length)state='warning'}
+      if(step===4){config={tolerance:parseBR(document.getElementById('match-tolerance').value)};result=eng.matchDocuments(base,config);if(result.matches.some(x=>x.status!=='confirmado'))state='warning'}
       if(step===5){config={rules};result=eng.applyAccounts(base,config);if(result.some(x=>x.statusAccount==='pendente'))state='warning'}
       if(step===6){config={template:document.getElementById('history-template').value,client:lot.client};result=eng.generateHistory(base,config)}
       if(step===7){result=eng.validate(base);if(result.some(x=>x.validationStatus!=='valido'))state='warning'}
@@ -28,8 +28,9 @@
     }catch(err){message(err.message||'Não foi possível executar este processo.','error')}
   }
   function inputs(){
-    if(step<=4)return lot.records||[];
-    if(step===5){const matches=lot.processResults?.[4]||[],docs=new Map(matches.map(m=>[m.bankId,m.document]));return(lot.records||[]).map(r=>({...r,documento:r.documento||docs.get(r.id)||''}))}
+    if(step===3)return lot.processResults?.[2]||[];
+    if(step===4)return lot.processResults?.[3]?.records||[];
+    if(step===5)return lot.processResults?.[4]?.records||[];
     if(step===6)return lot.processResults?.[5]||[];
     if(step===7)return lot.processResults?.[6]||[];
     if(step===8)return lot.processResults?.[7]||[];
@@ -37,8 +38,8 @@
   }
   function renderResult(result){
     const box=document.getElementById('engine-result');box.hidden=false;
-    if(step===3)box.innerHTML=result.length?table(['Data','Pagamento bancário','Valor','Itens encontrados','Diferença','Status'],result.map(r=>[r.date,r.bankDescription,money(r.bankValue),r.parts.map(p=>esc(p.description)+' ('+money(p.value)+')').join('<br>'),money(r.difference),chip('Desmembrado','ok')])):'<div class="engine-empty">Nenhum pagamento agrupado foi identificado automaticamente. Os registros permanecem disponíveis para revisão.</div>';
-    if(step===4)box.innerHTML=table(['Data','Movimento bancário','Documento','Correspondência','Confiança','Status'],result.map(r=>[r.date,esc(r.bankDescription),esc(r.document||'—'),esc(r.matchedDescription||'Não encontrada'),'<span class="confidence">'+r.confidence+'%</span>',chip(r.status==='confirmado'?'Confirmado':r.status==='revisar'?'Revisar':'Sem correspondência',r.status==='confirmado'?'ok':r.status==='revisar'?'warn':'error')]));
+    if(step===3)box.innerHTML=result.matches.length?table(['Data','Pagamento bancário','Valor','Itens encontrados','Diferença','Status'],result.matches.map(r=>[r.date,r.bankDescription,money(r.bankValue),r.parts.map(p=>esc(p.description)+' ('+money(p.value)+')').join('<br>'),money(r.difference),chip('Desmembrado','ok')])):'<div class="engine-empty">Nenhum pagamento agrupado foi identificado automaticamente. Todos os lançamentos seguem preservados para a próxima etapa.</div>';
+    if(step===4)box.innerHTML=table(['Data','Movimento bancário','Documento','Correspondência','Confiança','Status'],result.matches.map(r=>[r.date,esc(r.bankDescription),esc(r.document||'—'),esc(r.matchedDescription||'Não encontrada'),'<span class="confidence">'+r.confidence+'%</span>',chip(r.status==='confirmado'?'Confirmado':r.status==='revisar'?'Revisar':'Sem correspondência',r.status==='confirmado'?'ok':r.status==='revisar'?'warn':'error')]));
     if(step===5)box.innerHTML=table(['Descrição','Valor','Débito','Crédito','Regra','Status'],result.slice(0,500).map(r=>[esc(r.descricao),money(r.valor),esc(r.accountDebit||'—'),esc(r.accountCredit||'—'),esc(r.accountRule||'—'),chip(r.statusAccount==='classificado'?'Classificado':'Pendente',r.statusAccount==='classificado'?'ok':'warn')]));
     if(step===6)box.innerHTML=table(['Data','Documento','Histórico gerado','Status'],result.slice(0,500).map(r=>[r.data,esc(r.documento||'—'),esc(r.history),chip('Gerado','ok')]));
     if(step===7){const valid=result.filter(r=>r.validationStatus==='valido').length,warn=result.filter(r=>r.validationStatus==='aviso').length,error=result.filter(r=>r.validationStatus==='erro').length;box.innerHTML='<div class="validation-grid"><div class="validation-card"><strong>'+valid+'</strong><span>válidos</span></div><div class="validation-card"><strong>'+warn+'</strong><span>com avisos</span></div><div class="validation-card"><strong>'+error+'</strong><span>com erros</span></div></div>'+table(['Data','Descrição','Valor','Resultado','Detalhes'],result.slice(0,500).map(r=>[r.data,esc(r.descricao),money(r.valor),chip(r.validationStatus,r.validationStatus==='valido'?'ok':r.validationStatus==='aviso'?'warn':'error'),esc([...r.validationErrors,...r.validationWarnings].join(' · ')||'Sem pendências')]))}
@@ -52,7 +53,7 @@
   function configWrap(inner){return'<div class="engine-config">'+inner+'</div>'}
   function message(text,type=''){const el=document.getElementById('engine-message');el.textContent=text;el.className=('notice '+type).trim()}
   function setEngineState(state){const el=document.getElementById('engine-state');el.textContent=statusLabel(state);el.className='status-chip '+(state==='complete'?'ok':'warn')}
-  function successMessage(result,state){if(step===3)return result.length+' pagamento(s) agrupado(s) identificado(s).';if(step===4)return result.filter(r=>r.matchedId).length+' correspondência(s) encontrada(s).';if(step===5)return result.filter(r=>r.statusAccount==='classificado').length+' de '+result.length+' lançamento(s) classificados.';if(step===6)return result.length+' histórico(s) gerado(s).';if(step===7)return result.filter(r=>r.validationStatus==='valido').length+' de '+result.length+' lançamento(s) aprovados sem avisos.';return result.count+' lançamento(s) preparados para exportação.'}
+  function successMessage(result,state){if(step===3)return result.records.length+' lançamentos seguiram adiante; '+result.matches.length+' pagamento(s) agrupado(s) identificado(s).';if(step===4)return result.records.length+' lançamentos seguiram adiante; '+result.matches.filter(r=>r.matchedId).length+' correspondência(s) encontrada(s).';if(step===5)return result.filter(r=>r.statusAccount==='classificado').length+' de '+result.length+' lançamento(s) classificados.';if(step===6)return result.length+' histórico(s) gerado(s).';if(step===7)return result.filter(r=>r.validationStatus==='valido').length+' de '+result.length+' lançamento(s) aprovados sem avisos.';return result.count+' lançamento(s) preparados para exportação.'}
   function defaultRules(){return[{keyword:'tarifa',debit:'4.1.01.001',credit:'1.1.01.001'},{keyword:'fornecedor',debit:'2.1.01.001',credit:'1.1.01.001'},{keyword:'recebimento',debit:'1.1.01.001',credit:'3.1.01.001'},{keyword:'cliente',debit:'1.1.01.001',credit:'3.1.01.001'}]}
   function titles(){return{3:'Desmembrar pagamentos agrupados',4:'Identificar documentos e notas',5:'Classificar contas por regras',6:'Gerar históricos padronizados',7:'Validar o lote completo',8:'Gerar arquivo de importação'}}
   function descriptions(){return{3:'Procura combinações entre um pagamento bancário e múltiplos itens do relatório na mesma data.',4:'Cruza documento, valor, data e descrição para calcular a confiança da correspondência.',5:'Aplica regras por palavra-chave e mantém pendências visíveis para revisão.',6:'Usa um modelo configurável para gerar o histórico de cada lançamento.',7:'Bloqueia registros sem campos essenciais e destaca duplicidades e avisos.',8:'Converte apenas os registros validados para o layout escolhido.'}}
