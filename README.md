@@ -8,7 +8,15 @@ Cada processo é independente e terá sua própria página, regras e JavaScript.
 
 ### Processo 01 — Normalização dos arquivos
 
-Status: **em implementação / primeira versão funcional para CSV e TXT delimitado**.
+Status: **estrutura responsiva completa / primeira versão funcional do Processo 01 para CSV e TXT delimitado**.
+
+## Interface
+
+- painel responsivo para computador e celular;
+- navegação completa entre os oito processos;
+- estrutura de entrada, processamento e saída preparada para as próximas automações;
+- menu móvel e estados acessíveis;
+- Processo 01 funcional para normalização e exportação local.
 
 Entrada:
 - arquivo do banco;
