@@ -18,6 +18,7 @@ Status: **estrutura responsiva completa / primeira versão funcional do Processo
 - menu móvel e estados acessíveis;
 - Processo 01 funcional para normalização, validação, retomada e exportação local;
 - Processo 02 funcional para fechamento diário banco × relatório;
+- Processos 03 a 08 com motores locais funcionais e resultados persistidos;
 - contexto do lote e progresso persistidos somente no navegador;
 - contrato de dados compartilhado e trilha de auditoria local.
 
@@ -41,12 +42,12 @@ O processo permite mapear manualmente as colunas, normaliza datas e valores e ex
 
 1. Normalização dos arquivos
 2. Fechamento diário banco × relatório — **primeira automação funcional**
-3. Desmembramento dos pagamentos
-4. Identificação das notas fiscais
-5. Identificação das contas contábeis
-6. Identificação do histórico
-7. Validação final
-8. Layout de importação
+3. Desmembramento dos pagamentos — **motor funcional**
+4. Identificação das notas fiscais — **motor funcional**
+5. Identificação das contas contábeis — **motor funcional**
+6. Identificação do histórico — **motor funcional**
+7. Validação final — **motor funcional**
+8. Layout de importação — **motor funcional**
 
 ## Segurança
 
