@@ -4,27 +4,61 @@ Projeto web modular para preparar, conciliar e transformar dados financeiros em 
 
 ## Arquitetura
 
-Cada processo é independente e terá sua própria página, regras e JavaScript. Um processo poderá ser usado sozinho ou alimentar o processo seguinte.
+Cada processo tem sua própria página, regras e JavaScript. Um processo pode ser usado sozinho ou alimentar o processo seguinte.
 
-### Processo 01 — Normalização dos arquivos
+Status: **os oito processos têm motor funcional e encadeado**. O resultado de
+cada etapa é salvo no navegador e alimenta a seguinte.
 
-Status: **estrutura responsiva completa / primeira versão funcional do Processo 01 para CSV e TXT delimitado**.
+### Organização do código
+
+| Arquivo | Responsabilidade |
+| --- | --- |
+| `assets/js/core.js` | Estado do lote, persistência local e invalidação em cadeia. |
+| `assets/js/parsers.js` | Leitura de CSV/TXT/OFX e normalização de valores e datas. |
+| `assets/js/engines.js` | Regras dos processos 03 a 08. |
+| `assets/js/process-runner.js` | Interface dos motores 03 a 08. |
+| `assets/js/process-shell.js` | Estrutura comum das páginas 03 a 08. |
+| `assets/js/workspace.js` | Barra do lote, modal de contexto e progresso. |
+| `processos/01-normalizacao/app.js` | Interface do Processo 01. |
+| `processos/02-fechamento/app.js` | Interface e regra do Processo 02. |
+
+## Testes
+
+A suíte não tem dependências. Na raiz do repositório:
+
+```
+node tests/run.js
+```
+
+Cobre os leitores de arquivo, os motores 03 a 08, o encadeamento entre etapas,
+as regras de invalidação do lote e a integridade das páginas estáticas.
+
+O teste ponta a ponta percorre o fluxo 01 → 08 em um navegador real e é
+opcional:
+
+```
+npm install playwright-core
+node tests/e2e.js
+```
+
+Sem o pacote instalado ele se declara pulado em vez de falhar.
 
 ## Interface
 
 - painel responsivo para computador e celular;
 - navegação completa entre os oito processos;
-- estrutura de entrada, processamento e saída preparada para as próximas automações;
+- entrada, regra e saída declaradas em cada etapa;
 - menu móvel e estados acessíveis;
 - Processo 01 funcional para normalização, validação, retomada e exportação local;
 - Processo 02 funcional para fechamento diário banco × relatório;
 - Processos 03 a 08 com motores locais funcionais e resultados persistidos;
+- conteúdo vindo dos arquivos é sempre escapado antes de ir para a tela;
 - contexto do lote e progresso persistidos somente no navegador;
 - contrato de dados compartilhado e trilha de auditoria local.
 
 Entrada:
-- arquivo do banco;
-- relatório do cliente.
+- arquivo do banco (CSV, TXT delimitado ou OFX);
+- relatório do cliente (CSV ou TXT delimitado).
 
 Saída padronizada:
 - origem;
@@ -40,14 +74,19 @@ O processo permite mapear manualmente as colunas, normaliza datas e valores e ex
 
 ## Roadmap
 
+Os oito processos estão implementados e encadeados:
+
 1. Normalização dos arquivos
-2. Fechamento diário banco × relatório — **primeira automação funcional**
-3. Desmembramento dos pagamentos — **motor funcional**
-4. Identificação das notas fiscais — **motor funcional**
-5. Identificação das contas contábeis — **motor funcional**
-6. Identificação do histórico — **motor funcional**
-7. Validação final — **motor funcional**
-8. Layout de importação — **motor funcional**
+2. Fechamento diário banco × relatório
+3. Desmembramento dos pagamentos
+4. Identificação das notas fiscais
+5. Identificação das contas contábeis
+6. Identificação do histórico
+7. Validação final
+8. Layout de importação
+
+Próximos passos: validar cada motor com arquivos reais anonimizados, ampliar os
+leitores de entrada (XLS/XLSX) e os layouts de saída.
 
 ## Segurança
 

@@ -1,5 +1,4 @@
 (function(){
-  document.querySelectorAll('.process-card').forEach((card,index)=>{if(index>=2){const badge=card.querySelector('.badge'),link=card.querySelector('.card-link');if(badge){badge.textContent='Motor disponível';badge.classList.add('badge-live')}if(link)link.firstChild.textContent='Abrir motor '}});
   if(!window.ContabilStore)return;const lot=ContabilStore.active();if(!lot)return;
   const actions=[document.querySelector('[data-main-action]'),document.querySelector('[data-hero-action]')].filter(Boolean),done=Object.values(lot.steps).filter(s=>s==='complete'||s==='warning').length,current=Math.min(8,Math.max(1,lot.currentStep||1)),slug=['01-normalizacao','02-fechamento','03-desmembramento','04-notas-fiscais','05-contas-contabeis','06-historico','07-validacao','08-layout-importacao'][current-1];
   actions.forEach(a=>{a.textContent='Continuar '+(lot.client||'lote')+' →';a.href='processos/'+slug+'/'});

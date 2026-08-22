@@ -57,6 +57,14 @@ transformação:
 Ao executar novamente uma etapa, os resultados das etapas posteriores são
 invalidados para impedir que uma exportação antiga seja usada com dados novos.
 
+## Conteúdo vindo dos arquivos
+
+Descrições, documentos e datas saem do arquivo do usuário e podem conter
+qualquer texto — inclusive marcação HTML, já que uma data não reconhecida
+preserva o texto original da célula. Todo valor de origem externa é escapado
+antes de ser inserido na página. Ao acrescentar uma coluna a qualquer tabela,
+passe o valor pela função de escape do módulo.
+
 ## Segurança e privacidade
 
 Arquivos e dados são processados localmente. Não devem ser adicionados ao

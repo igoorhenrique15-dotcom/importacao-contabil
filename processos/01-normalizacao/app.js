@@ -1,4 +1,5 @@
 document.head.insertAdjacentHTML('beforeend','<link rel="stylesheet" href="../../assets/css/tools.css">');
+const {parseDelimited,parseOfx,parseMoney,normalizeDate,guessColumn}=window.ContabilParsers;
 const sourceState={banco:freshSource(),relatorio:freshSource()};
 const fields=[
   {key:'data',label:'Data',hints:['data','dt','date','movimento','lancamento','dtposted']},
@@ -44,27 +45,11 @@ async function loadFile(source,file){
   }catch(err){setStatus(err.message||'Não foi possível ler o arquivo.','error')}
 }
 function readText(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{const bytes=new Uint8Array(reader.result);let text=new TextDecoder('utf-8',{fatal:false}).decode(bytes);if(text.includes('�'))text=new TextDecoder('windows-1252').decode(bytes);resolve(text)};reader.onerror=()=>reject(new Error('Falha ao ler o arquivo.'));reader.readAsArrayBuffer(file)})}
-function parseOfx(text){
-  const blocks=text.match(/<STMTTRN>[\s\S]*?(?=<STMTTRN>|<\/BANKTRANLIST>)/gi)||[];
-  const headers=['DTPOSTED','MEMO','TRNAMT','FITID'];
-  const get=(b,t)=>{const m=b.match(new RegExp('<'+t+'>([^<\\r\\n]+)','i'));return m?m[1].trim():''};
-  return [headers,...blocks.map(b=>[get(b,'DTPOSTED').slice(0,8),get(b,'MEMO')||get(b,'NAME'),get(b,'TRNAMT'),get(b,'FITID')])];
-}
-function parseDelimited(text){
-  const cleaned=text.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n'),lines=cleaned.split('\n').filter(x=>x.trim());
-  const candidates=[';','\t',','],delimiter=candidates.map(d=>({d,s:lines.slice(0,10).reduce((n,l)=>n+countOutsideQuotes(l,d),0)})).sort((a,b)=>b.s-a.s)[0].d;
-  const rows=[];let row=[],field='',quoted=false;
-  for(let i=0;i<cleaned.length;i++){const ch=cleaned[i],next=cleaned[i+1];if(ch==='"'){if(quoted&&next==='"'){field+='"';i++}else quoted=!quoted}else if(ch===delimiter&&!quoted){row.push(field);field=''}else if(ch==='\n'&&!quoted){row.push(field);rows.push(row);row=[];field=''}else field+=ch}
-  if(field.length||row.length){row.push(field);rows.push(row)}return rows;
-}
-function countOutsideQuotes(line,d){let q=false,n=0;for(const ch of line){if(ch==='"')q=!q;else if(ch===d&&!q)n++}return n}
 function buildMapping(source){
   const box=document.getElementById('mapping-'+source);box.innerHTML='';
   fields.forEach(f=>{const wrap=document.createElement('div');wrap.className='field';const label=document.createElement('label'),select=document.createElement('select');select.id='map-'+source+'-'+f.key;label.htmlFor=select.id;label.textContent=f.label;select.innerHTML='<option value="">— não usar —</option>'+sourceState[source].headers.map((h,i)=>'<option value="'+i+'">'+escapeHtml(h)+'</option>').join('');const guess=guessColumn(sourceState[source].headers,f.hints);if(guess>=0)select.value=String(guess);wrap.append(label,select);box.appendChild(wrap)});
   const saved=ContabilStore.getTemplate('mapping:'+source);if(saved)applyMapping(source,saved.mapping);
 }
-function guessColumn(headers,hints){const normalized=headers.map(normalizeText);for(const hint of hints){const exact=normalized.findIndex(h=>h===normalizeText(hint));if(exact>=0)return exact}for(const hint of hints){const partial=normalized.findIndex(h=>h.includes(normalizeText(hint)));if(partial>=0)return partial}return-1}
-function normalizeText(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 function currentMapping(source){return Object.fromEntries(fields.map(f=>{const v=document.getElementById('map-'+source+'-'+f.key).value;return[f.key,v===''?null:Number(v)]}))}
 function applyMapping(source,mapping){fields.forEach(f=>{const el=document.getElementById('map-'+source+'-'+f.key);if(el&&mapping[f.key]!=null&&mapping[f.key]<sourceState[source].headers.length)el.value=String(mapping[f.key])})}
 function normalize(source){
@@ -80,9 +65,6 @@ function normalize(source){
   }).filter(r=>r.data||r.descricao||r.valor||r.debito||r.credito||r.documento);
   sourceState[source].issues=issues;page=1;renderOutput();setStatus(labelSource(source)+' normalizado: '+sourceState[source].rows.length+' registros, '+issues.length+' avisos.',issues.length?'':'ok');
 }
-function parseMoney(input){let s=String(input??'').trim();if(!s)return 0;const negative=/^-/.test(s)||/^\(.*\)$/.test(s);s=s.replace(/[R$€£\s()]/g,'');const comma=s.lastIndexOf(','),dot=s.lastIndexOf('.');if(comma>dot)s=s.replace(/\./g,'').replace(',','.');else if(dot>comma&&comma>=0)s=s.replace(/,/g,'');else if(comma>=0)s=s.replace(',','.');s=s.replace(/[^0-9.\-]/g,'');if(!s||!Number.isFinite(Number(s)))return null;const n=Number(s);return negative?-Math.abs(n):n}
-function normalizeDate(input){const s=String(input??'').trim();if(!s)return{value:'',valid:true};let m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);if(m){let y=m[3];if(y.length===2)y=Number(y)>=70?'19'+y:'20'+y;const d=validDate(Number(y),Number(m[2]),Number(m[1]));return{value:d?String(m[1]).padStart(2,'0')+'/'+String(m[2]).padStart(2,'0')+'/'+y:s,valid:d}}m=s.match(/^(\d{4})[\/\-.]?(\d{2})[\/\-.]?(\d{2})/);if(m){const d=validDate(+m[1],+m[2],+m[3]);return{value:d?m[3]+'/'+m[2]+'/'+m[1]:s,valid:d}}return{value:s,valid:false}}
-function validDate(y,m,d){const x=new Date(y,m-1,d);return x.getFullYear()===y&&x.getMonth()===m-1&&x.getDate()===d}
 function allRows(){return[...sourceState.banco.rows,...sourceState.relatorio.rows,...restoredRows]}
 function filteredRows(){return allRows().filter(r=>!query||[r.descricao,r.documento,r.data,r.origem].some(v=>String(v).toLowerCase().includes(query)))}
 function renderOutput(){

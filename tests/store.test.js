@@ -1,0 +1,96 @@
+const {loadBrowserModules,suite,eq,ok}=require('./harness');
+
+// core.js depende de localStorage, CustomEvent e dispatchEvent do navegador.
+function freshStore(){
+  const data=new Map();
+  const win={
+    localStorage:{getItem:k=>data.has(k)?data.get(k):null,setItem:(k,v)=>data.set(k,String(v)),removeItem:k=>data.delete(k)},
+    CustomEvent:class{constructor(type,init){this.type=type;Object.assign(this,init)}},
+    addEventListener(){},dispatchEvent(){return true}
+  };
+  const fs=require('fs'),path=require('path');
+  new Function('window','localStorage','CustomEvent',fs.readFileSync(path.join(__dirname,'..','assets/js/core.js'),'utf8'))(win,win.localStorage,win.CustomEvent);
+  return{store:win.ContabilStore,raw:data};
+}
+const rec=(i,origem='banco')=>({id:'r'+i,origem,data:'05/03/2026',descricao:'X'+i,valor:10,debito:0,credito:10,documento:'',status:'valid',issues:[]});
+
+module.exports=function(){
+  suite('ContabilStore');
+  {
+    const {store}=freshStore();
+    const lot=store.createLot({client:'ACME',period:'2026-03'});
+    eq('lote criado fica ativo',store.active().id,lot.id);
+    eq('etapa 1 começa em andamento',lot.steps[1],'in_progress');
+    eq('demais etapas começam pendentes',lot.steps[8],'pending');
+    ok('trilha registra a criação',lot.audit.length===1,JSON.stringify(lot.audit));
+  }
+  {
+    const {store}=freshStore();
+    store.createLot({client:'ACME'});
+    store.setRecords([rec(1),rec(2)],'banco');
+    eq('normalização conclui a etapa 1',store.active().steps[1],'complete');
+    eq('resultado da etapa 1 é guardado',store.active().processResults[1].length,2);
+  }
+  {
+    const {store}=freshStore();
+    store.createLot({client:'ACME'});
+    store.setRecords([rec(1)],'banco');
+    store.setClosing([{date:'05/03/2026',status:'conciliado',difference:0}],[rec(1)],{tolerance:.01});
+    store.setProcessResult(5,[rec(1)],'complete',{rules:[]});
+    store.setProcessResult(6,[rec(1)],'complete',{});
+    eq('etapa 6 concluída',store.active().steps[6],'complete');
+    // Reexecutar a etapa 5 precisa invalidar 6, 7 e 8.
+    store.setProcessResult(5,[rec(1),rec(2)],'complete',{rules:[]});
+    eq('etapa 6 volta a pendente',store.active().steps[6],'pending');
+    eq('resultado da etapa 6 é descartado',store.active().processResults[6],undefined);
+    eq('configuração da etapa 6 é descartada',store.active().configs[6],undefined);
+    eq('etapa 5 permanece concluída',store.active().steps[5],'complete');
+  }
+  {
+    const {store}=freshStore();
+    store.createLot({client:'ACME'});
+    store.setRecords([rec(1)],'banco');
+    store.setProcessResult(4,{records:[rec(1)],matches:[]},'complete',{});
+    // Renormalizar precisa derrubar tudo o que veio depois.
+    store.setRecords([rec(1),rec(2)],'banco');
+    eq('etapa 4 é invalidada por nova normalização',store.active().steps[4],'pending');
+    eq('resultado da etapa 4 é descartado',store.active().processResults[4],undefined);
+  }
+  {
+    const {store}=freshStore();
+    store.createLot({client:'ACME'});
+    let erro='';
+    try{store.setRecords(new Array(10001).fill(0).map((_,i)=>rec(i)),'banco')}catch(e){erro=e.message}
+    ok('recusa mais de 10.000 registros',/10\.000/.test(erro),erro);
+  }
+  {
+    const {store}=freshStore();
+    const a=store.createLot({client:'A'}),b=store.createLot({client:'B'});
+    eq('dois lotes coexistem',store.listLots().length,2);
+    store.switchLot(a.id);
+    eq('troca de lote ativo',store.active().client,'A');
+    store.removeLot(a.id);
+    eq('remoção deixa o outro lote ativo',store.active().id,b.id);
+  }
+  {
+    const {store}=freshStore();
+    store.createLot({client:'ACME'});
+    store.saveTemplate('mapping:banco',{name:'Itaú',mapping:{data:0,valor:2}});
+    eq('modelo de mapeamento é recuperado',store.getTemplate('mapping:banco').mapping.valor,2);
+  }
+  {
+    const {store,raw}=freshStore();
+    store.createLot({client:'ACME'});
+    store.setRecords([rec(1)],'banco');
+    ok('estado é gravado na chave versionada',raw.has('contabil-flow:v2'),[...raw.keys()].join(','));
+    eq('versão do estado',JSON.parse(raw.get('contabil-flow:v2')).version,2);
+  }
+  {
+    const {store}=freshStore();
+    store.createLot({client:'ACME'});
+    const antes=store.active().audit.length;
+    store.addAudit('Teste','detalhe');
+    eq('trilha cresce',store.active().audit.length,antes+1);
+    eq('entrada mais recente vem primeiro',store.active().audit[0].action,'Teste');
+  }
+};
