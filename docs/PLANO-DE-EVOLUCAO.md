@@ -148,7 +148,9 @@ recarregar a página, reconstruído a partir de 3.951 bytes de estado gravado.
       etapa pelo pipeline.
 - [x] Botão de desfazer por lançamento, com a conferência contra o extrato
       recalculando na hora.
-- [ ] Guardar as regras de conta por cliente, e não por lote. **Pendente.**
+- [x] Regras de conta guardadas por cliente, e não por lote: o plano de contas
+      de uma empresa não muda de um mês para o outro, então o lote de abril já
+      abre com as regras usadas em março.
 
 **Verificado no navegador:** corrigir uma conta na tela leva o novo valor ao
 arquivo final; retirar um lançamento faz a conferência acusar a diferença

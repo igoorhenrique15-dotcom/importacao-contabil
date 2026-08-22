@@ -1,8 +1,8 @@
 (function(){
   const KEY='contabil-flow:v2',LIMITE=10000;
-  const empty=()=>({version:2,activeLotId:null,lots:{},preferences:{pageSize:50}});
+  const empty=()=>({version:2,activeLotId:null,lots:{},rulesByClient:{},preferences:{pageSize:50}});
   function uid(prefix='id'){return prefix+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7)}
-  function load(){try{const parsed=JSON.parse(localStorage.getItem(KEY));if(parsed?.version!==2)return empty();Object.values(parsed.lots||{}).forEach(lot=>{delete lot.processResults;delete lot.dailyClosing;lot.configs=lot.configs||{};lot.overrides=lot.overrides||{};lot.audit=lot.audit||[];lot.steps=lot.steps||{1:'pending',2:'pending',3:'pending',4:'pending',5:'pending',6:'pending',7:'pending',8:'pending'}});return parsed}catch{return empty()}}
+  function load(){try{const parsed=JSON.parse(localStorage.getItem(KEY));if(parsed?.version!==2)return empty();parsed.rulesByClient=parsed.rulesByClient||{};Object.values(parsed.lots||{}).forEach(lot=>{delete lot.processResults;delete lot.dailyClosing;lot.configs=lot.configs||{};lot.overrides=lot.overrides||{};lot.audit=lot.audit||[];lot.steps=lot.steps||{1:'pending',2:'pending',3:'pending',4:'pending',5:'pending',6:'pending',7:'pending',8:'pending'}});return parsed}catch{return empty()}}
   let state=load();
   // Os resultados de cada etapa nao vao para o disco: sao reconstruidos por
   // ContabilPipeline a partir dos registros normalizados e das configuracoes.
@@ -36,11 +36,22 @@
     addAudit('Correção desfeita',recordId,false);persist();
   }
   function overridesOf(){return ensure().overrides||{}}
+  // Regras de conta valem para o cliente, nao para o lote: o plano de contas
+  // de uma empresa nao muda de um mes para o outro.
+  function chaveCliente(nome){return String(nome||'').trim().toLowerCase()||'sem-cliente'}
+  function saveClientRules(rules){
+    const lot=ensure();state.rulesByClient=state.rulesByClient||{};
+    state.rulesByClient[chaveCliente(lot.client)]=rules;persist();
+  }
+  function clientRules(){
+    const lot=ensure();
+    return state.rulesByClient?.[chaveCliente(lot.client)]||null;
+  }
   function setStep(step,status){const lot=ensure();lot.steps[step]=status;lot.currentStep=Math.max(lot.currentStep,step);persist()}
   function switchLot(id){if(state.lots[id]){state.activeLotId=id;persist();return state.lots[id]}}
   function removeLot(id){delete state.lots[id];if(state.activeLotId===id)state.activeLotId=Object.keys(state.lots)[0]||null;persist()}
   function listLots(){return Object.values(state.lots).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))}
   function saveTemplate(name,value){const lot=ensure();lot.templates[name]=value;persist()}
   function getTemplate(name){return ensure().templates[name]}
-  window.ContabilStore={uid,active,ensure,createLot,updateLot,addAudit,setRecords,setClosing,setProcessResult,setOverride,clearOverride,overridesOf,setStep,switchLot,removeLot,listLots,saveTemplate,getTemplate,get state(){return state}};
+  window.ContabilStore={uid,active,ensure,createLot,updateLot,addAudit,setRecords,setClosing,setProcessResult,setOverride,clearOverride,overridesOf,saveClientRules,clientRules,setStep,switchLot,removeLot,listLots,saveTemplate,getTemplate,get state(){return state}};
 })();

@@ -87,6 +87,20 @@ module.exports=function(){
     eq('remoção deixa o outro lote ativo',store.active().id,b.id);
   }
   {
+    // Regras de conta acompanham o cliente, nao o lote.
+    const {store}=freshStore();
+    const regras=[{keyword:'ferro velho',debit:'2.1.01.002',credit:'1.1.01.002'}];
+    store.createLot({client:'Metalurgica ACME',period:'2026-03'});
+    store.saveClientRules(regras);
+    eq('as regras voltam para o mesmo cliente',store.clientRules(),regras);
+    store.createLot({client:'Metalurgica ACME',period:'2026-04'});
+    eq('e valem no lote do mes seguinte',store.clientRules(),regras);
+    store.createLot({client:'Outra Empresa',period:'2026-04'});
+    eq('mas nao vazam para outro cliente',store.clientRules(),null);
+    store.createLot({client:'  metalurgica acme  ',period:'2026-05'});
+    eq('caixa e espaco nao criam cliente novo',store.clientRules(),regras);
+  }
+  {
     const {store}=freshStore();
     store.createLot({client:'ACME'});
     store.saveTemplate('mapping:banco',{name:'Itaú',mapping:{data:0,valor:2}});

@@ -46,6 +46,11 @@ hora — a correção não escapa do controle.
 O botão de desfazer remove **todas** as correções daquele lançamento, não só a
 da etapa em que se está.
 
+As regras de conta do Processo 05 são guardadas por cliente, em
+`state.rulesByClient`, e não dentro do lote: o plano de contas de uma empresa
+não muda de um mês para o outro. Um lote novo do mesmo cliente já abre com as
+regras do lote anterior.
+
 Consequência prática: **os motores precisam ser determinísticos**. Mesma
 entrada e mesma configuração têm de produzir sempre a mesma saída, senão o que
 o usuário vê ao reabrir a página difere do que ele viu ao executar. Um teste
