@@ -5,7 +5,7 @@
   const host=document.querySelector('.empty-state');if(!host)return;const pageBadge=document.querySelector('.topbar .badge');if(pageBadge){pageBadge.textContent='Motor disponível';pageBadge.classList.add('badge-live')}host.className='engine-shell';host.id='engine-workspace';
   const lot=store.ensure();let rules=lot.configs?.[5]?.rules||defaultRules(),layoutResult=null;
   host.innerHTML='<div class="engine-head"><div><span class="step-label">MOTOR DO PROCESSO</span><h2>'+titles()[step]+'</h2><p>'+descriptions()[step]+'</p></div><span class="status-chip '+(lot.steps[step]==='complete'?'ok':'warn')+'" id="engine-state">'+statusLabel(lot.steps[step])+'</span></div><div id="engine-controls"></div><div id="engine-message" class="notice" role="status" aria-live="polite">Configure as regras e execute o processo.</div><div id="engine-result" class="engine-result" hidden></div>';
-  renderControls();if(lot.processResults?.[step])renderResult(lot.processResults[step]);
+  renderControls();if(lot.steps?.[step]!=='pending'&&lot.records?.length)try{renderResult(window.ContabilPipeline.resultOf(lot,step))}catch{}
   function renderControls(){
     const box=document.getElementById('engine-controls');
     if(step===3)box.innerHTML=configWrap('<div class="form-field"><label for="engine-tolerance">Tolerância (R$)</label><input id="engine-tolerance" inputmode="decimal" value="'+(lot.configs?.[3]?.tolerance??'0,01')+'"></div>')+actions('Executar desmembramento');
@@ -28,14 +28,12 @@
       store.setProcessResult(step,result,state,config);setEngineState(state);renderResult(result);message(successMessage(result,state),state==='complete'?'ok':'')
     }catch(err){message(err.message||'Não foi possível executar este processo.','error')}
   }
+  // A entrada de cada etapa e a saida da anterior, reconstruida a partir dos
+  // registros normalizados e das configuracoes salvas.
   function inputs(){
-    if(step===3)return lot.processResults?.[2]||[];
-    if(step===4)return lot.processResults?.[3]?.records||[];
-    if(step===5)return lot.processResults?.[4]?.records||[];
-    if(step===6)return lot.processResults?.[5]||[];
-    if(step===7)return lot.processResults?.[6]||[];
-    if(step===8)return lot.processResults?.[7]||[];
-    return[]
+    if(!lot.records?.length)return[];
+    if(lot.steps?.[step-1]==='pending')return[];
+    return window.ContabilPipeline.upTo(lot,step-1);
   }
   function renderResult(result){
     const box=document.getElementById('engine-result');box.hidden=false;

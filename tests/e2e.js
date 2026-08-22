@@ -127,6 +127,30 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
     }
   }
 
+  console.log('\npersistência: o resultado sobrevive a recarregar');
+  // Nada derivado é gravado, então recarregar precisa reconstruir a cadeia.
+  await page.goto(base+'/processos/08-layout-importacao/');
+  await page.waitForSelector('#engine-result:not([hidden])',{timeout:10000});
+  {
+    const preview=await page.innerText('.layout-preview');
+    check('o arquivo final é reconstruído sozinho ao abrir a página',preview.includes('DATA;DEBITO;CREDITO'),preview.split('\n')[0]);
+    check('e continua sem o SISPAG',!preview.includes('SISPAG'),preview);
+  }
+  await page.goto(base+'/processos/07-validacao/');
+  await page.waitForSelector('.reconcile-grid dd',{timeout:10000});
+  {
+    const grid=await page.locator('.reconcile-grid dd').allInnerTexts();
+    check('a conferência é reconstruída com o valor certo',grid[0].includes('10.045,90'),grid.join(' | '));
+  }
+  {
+    const tamanho=await page.evaluate(()=>{const v=localStorage.getItem('contabil-flow:v2');return v?v.length:0});
+    check('o estado gravado é pequeno ('+tamanho+' bytes)',tamanho>0&&tamanho<20000,String(tamanho));
+    const gravado=await page.evaluate(()=>JSON.parse(localStorage.getItem('contabil-flow:v2')));
+    const lot=Object.values(gravado.lots)[0];
+    check('nada derivado foi para o disco',lot.processResults===undefined&&lot.dailyClosing===undefined,Object.keys(lot).join(','));
+    check('as configurações foram gravadas',!!lot.configs&&!!lot.configs['5'],JSON.stringify(lot.configs||{}).slice(0,120));
+  }
+
   console.log('\nescape de conteúdo do arquivo');
   const CSV_XSS='DATA;DESCRICAO;VALOR\n<img src=x onerror=window.__xss=1>;"<b>NEGRITO</b>";-10,00\n';
   await page.goto(base+'/processos/01-normalizacao/');

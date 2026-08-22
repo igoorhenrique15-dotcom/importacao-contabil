@@ -10,13 +10,33 @@ Cada trabalho possui um identificador local e os campos:
 - sistema contábil de destino;
 - etapa atual e status das oito etapas;
 - registros normalizados;
-- resultado do fechamento diário;
+- configuração de cada etapa (tolerâncias, regras de conta, modelo de
+  histórico, layout de destino);
 - modelos de mapeamento;
 - trilha das últimas ações.
 
 O estado é salvo no navegador sob a chave versionada `contabil-flow:v2`. Nesta
-fase não existe transmissão para servidor. O limite operacional é de 10.000
-registros salvos por lote.
+fase não existe transmissão para servidor.
+
+## O que é gravado e o que é recalculado
+
+Só a **entrada** vai para o disco: os lançamentos normalizados do Processo 01,
+a configuração de cada etapa, o status das etapas e a trilha de auditoria. A
+saída de cada processo é **derivada** e reconstruída sob demanda por
+`assets/js/pipeline.js`, a partir da entrada e das configurações.
+
+Guardar as oito saídas custava 4,3 MB para mil lançamentos e estourava o teto
+de 5 MB do `localStorage` antes de um mês de trabalho. Guardando só a entrada,
+dez mil lançamentos ocupam 3,2 MB. Como os motores são rápidos, refazer a
+cadeia inteira (cerca de 1 s para dez mil lançamentos, com cache em memória
+depois disso) é mais barato do que armazená-la.
+
+Consequência prática: **os motores precisam ser determinísticos**. Mesma
+entrada e mesma configuração têm de produzir sempre a mesma saída, senão o que
+o usuário vê ao reabrir a página difere do que ele viu ao executar. Um teste
+cobre isso.
+
+O limite operacional é de 10.000 registros por lote — medido, não estimado.
 
 ## Contrato do lançamento normalizado
 

@@ -15,7 +15,8 @@ cada etapa é salvo no navegador e alimenta a seguinte.
 | --- | --- |
 | `assets/js/core.js` | Estado do lote, persistência local e invalidação em cadeia. |
 | `assets/js/parsers.js` | Leitura de CSV/TXT/OFX e normalização de valores e datas. |
-| `assets/js/engines.js` | Regras dos processos 03 a 08. |
+| `assets/js/engines.js` | Regras dos processos 02 a 08. |
+| `assets/js/pipeline.js` | Reconstrói a saída de cada etapa a partir da entrada gravada. |
 | `assets/js/process-runner.js` | Interface dos motores 03 a 08. |
 | `assets/js/process-shell.js` | Estrutura comum das páginas 03 a 08. |
 | `assets/js/workspace.js` | Barra do lote, modal de contexto e progresso. |
@@ -54,6 +55,8 @@ Sem o pacote instalado ele se declara pulado em vez de falhar.
 - Processos 03 a 08 com motores locais funcionais e resultados persistidos;
 - conteúdo vindo dos arquivos é sempre escapado antes de ir para a tela;
 - contexto do lote e progresso persistidos somente no navegador;
+- só a entrada é gravada; o resultado de cada etapa é recalculado sob demanda,
+  o que faz um lote de 10.000 lançamentos caber no navegador;
 - contrato de dados compartilhado e trilha de auditoria local.
 
 Entrada:

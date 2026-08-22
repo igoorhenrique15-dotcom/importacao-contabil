@@ -29,32 +29,46 @@ module.exports=function(){
     store.createLot({client:'ACME'});
     store.setRecords([rec(1),rec(2)],'banco');
     eq('normalização conclui a etapa 1',store.active().steps[1],'complete');
-    eq('resultado da etapa 1 é guardado',store.active().processResults[1].length,2);
+    eq('os lançamentos normalizados são guardados',store.active().records.length,2);
   }
   {
     const {store}=freshStore();
     store.createLot({client:'ACME'});
     store.setRecords([rec(1)],'banco');
-    store.setClosing([{date:'05/03/2026',status:'conciliado',difference:0}],[rec(1)],{tolerance:.01});
-    store.setProcessResult(5,[rec(1)],'complete',{rules:[]});
-    store.setProcessResult(6,[rec(1)],'complete',{});
+    store.setClosing([{date:'05/03/2026',status:'conciliado',difference:0}],{tolerance:.01});
+    store.setProcessResult(5,[rec(1)],'complete',{rules:[{keyword:'x',debit:'1',credit:'2'}]});
+    store.setProcessResult(6,[rec(1)],'complete',{template:'T'});
     eq('etapa 6 concluída',store.active().steps[6],'complete');
     // Reexecutar a etapa 5 precisa invalidar 6, 7 e 8.
     store.setProcessResult(5,[rec(1),rec(2)],'complete',{rules:[]});
     eq('etapa 6 volta a pendente',store.active().steps[6],'pending');
-    eq('resultado da etapa 6 é descartado',store.active().processResults[6],undefined);
     eq('configuração da etapa 6 é descartada',store.active().configs[6],undefined);
     eq('etapa 5 permanece concluída',store.active().steps[5],'complete');
+    eq('a configuração da etapa 5 fica guardada',Array.isArray(store.active().configs[5].rules),true);
   }
   {
     const {store}=freshStore();
     store.createLot({client:'ACME'});
     store.setRecords([rec(1)],'banco');
-    store.setProcessResult(4,{records:[rec(1)],matches:[]},'complete',{});
+    store.setProcessResult(4,{records:[rec(1)],matches:[]},'complete',{tolerance:.01});
     // Renormalizar precisa derrubar tudo o que veio depois.
     store.setRecords([rec(1),rec(2)],'banco');
     eq('etapa 4 é invalidada por nova normalização',store.active().steps[4],'pending');
-    eq('resultado da etapa 4 é descartado',store.active().processResults[4],undefined);
+    eq('configuração da etapa 4 é descartada',store.active().configs[4],undefined);
+  }
+  {
+    // O que é derivado não pode ir para o disco: era isso que estourava o
+    // limite do navegador antes de um mês de trabalho.
+    const {store,raw}=freshStore();
+    store.createLot({client:'ACME'});
+    store.setRecords([rec(1),rec(2)],'banco');
+    store.setProcessResult(5,[rec(1),rec(2)],'complete',{rules:[]});
+    const gravado=JSON.parse(raw.get('contabil-flow:v2'));
+    const lot=Object.values(gravado.lots)[0];
+    eq('resultados derivados não são gravados',lot.processResults,undefined);
+    eq('o resumo por data também não',lot.dailyClosing,undefined);
+    eq('os lançamentos normalizados são gravados uma vez',lot.records.length,2);
+    eq('as configurações são gravadas',typeof lot.configs[5],'object');
   }
   {
     const {store}=freshStore();

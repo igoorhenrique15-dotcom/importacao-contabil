@@ -58,9 +58,63 @@
     const byBank=new Map(matches.map(m=>[m.bankId,m])),byPart=new Map(matches.flatMap(m=>m.parts.map(p=>[p.id,m.bankId]))),enriched=records.map(record=>{const match=byBank.get(record.id),parent=byPart.get(record.id);return{...record,splitStatus:match?'desmembrado':parent?'item_desmembrado':'nao_aplicavel',splitParts:match?.parts||[],splitParentId:parent||null,processedThrough:3}});
     return{records:enriched,matches};
   }
+  // Um casamento só é aceito a partir de 45 pontos, e a pontuação só chega lá
+  // por dois caminhos: documento igual (55) ou valor mais data (30+15). Todo
+  // par que possa ser aceito está, portanto, num destes dois índices — varrer
+  // o relatório inteiro para cada movimento bancário é desperdício.
+  //
+  // Efeito colateral aceito: um par rejeitado deixa de exibir a confiança
+  // parcial que tinha. Mostrar "30%" ao lado de "sem correspondência" só
+  // confundia.
+  const FAIXA_CENTAVOS=1000;
+  // Fechamento diário (Processo 02). Vive aqui, e não na página, para que a
+  // cadeia possa ser reconstruída sem passar pela interface.
+  function closeDaily(records,{tolerance=.01}={}){
+    const tol=Math.max(0,cents(tolerance)),porData=new Map();
+    records.forEach(r=>{
+      const data=r.data||'Sem data';
+      if(!porData.has(data))porData.set(data,{date:data,banco:[],relatorio:[]});
+      porData.get(data)[r.origem==='banco'?'banco':'relatorio'].push(r);
+    });
+    const rows=[...porData.values()].map(x=>{
+      const banco=x.banco.reduce((s,r)=>s+cents(r.valor),0),relatorio=x.relatorio.reduce((s,r)=>s+cents(r.valor),0),diff=banco-relatorio;
+      return{date:x.date,bankCount:x.banco.length,bankTotal:banco/100,reportCount:x.relatorio.length,reportTotal:relatorio/100,
+        difference:diff/100,status:!x.banco.length||!x.relatorio.length?'incompleto':Math.abs(diff)<=tol?'conciliado':'divergente'};
+    }).sort((a,b)=>ordemData(a.date)-ordemData(b.date));
+    const porDia=new Map(rows.map(d=>[d.date,d]));
+    const enriched=records.map(record=>{const dia=porDia.get(record.data)||{status:'incompleto',difference:0};
+      return{...record,closingStatus:dia.status,dailyDifference:dia.difference,processedThrough:2}});
+    return{rows,records:enriched};
+  }
+  function ordemData(v){const m=String(v).match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?new Date(+m[3],+m[2]-1,+m[1]).getTime():Number.MAX_SAFE_INTEGER}
   function matchDocuments(records,{tolerance=.01}={}){
     const banks=records.filter(r=>r.origem==='banco'),reports=records.filter(r=>r.origem==='relatorio'),used=new Set();
-    const matches=banks.map(bank=>{let best=null,score=0;reports.filter(r=>!used.has(r.id)).forEach(report=>{let s=0;if(bank.documento&&report.documento&&norm(bank.documento)===norm(report.documento))s+=55;if(abs(abs(bank.valor)-abs(report.valor))<=tolerance)s+=30;if(bank.data&&bank.data===report.data)s+=15;if(norm(bank.descricao)&&norm(report.descricao)&&similar(norm(bank.descricao),norm(report.descricao))>.45)s+=10;if(s>score){score=s;best=report}});if(best&&score>=45)used.add(best.id);return{id:'doc-'+bank.id,bankId:bank.id,bankDescription:bank.descricao,bankValue:bank.valor,date:bank.data,document:(score>=45&&best?.documento)||bank.documento||'',matchedId:score>=45&&best?best.id:null,matchedDescription:score>=45&&best?best.descricao:'',confidence:Math.min(100,score),status:score>=80?'confirmado':score>=45?'revisar':'sem_correspondencia'}});
+    const tol=Math.max(0,cents(tolerance)),porDocumento=new Map(),porData=new Map();
+    reports.forEach(r=>{
+      const doc=norm(r.documento);
+      if(doc){if(!porDocumento.has(doc))porDocumento.set(doc,[]);porDocumento.get(doc).push(r)}
+      const dia=r.data||'';if(!porData.has(dia))porData.set(dia,new Map());
+      const porValor=porData.get(dia),v=Math.abs(cents(r.valor));
+      if(!porValor.has(v))porValor.set(v,[]);porValor.get(v).push(r);
+    });
+    const matches=banks.map(bank=>{
+      const vistos=new Set(),candidatos=[];
+      const add=r=>{if(r&&!used.has(r.id)&&!vistos.has(r.id)){vistos.add(r.id);candidatos.push(r)}};
+      const doc=norm(bank.documento);
+      if(doc)(porDocumento.get(doc)||[]).forEach(add);
+      const porValor=porData.get(bank.data||'');
+      if(porValor){
+        const alvo=Math.abs(cents(bank.valor));
+        // Tolerância grande deixa a faixa de centavos cara; aí sai mais barato
+        // percorrer o dia inteiro.
+        if(tol<=FAIXA_CENTAVOS)for(let v=alvo-tol;v<=alvo+tol;v++)(porValor.get(v)||[]).forEach(add);
+        else porValor.forEach(lista=>lista.forEach(add));
+      }
+      let best=null,score=0;
+      candidatos.forEach(report=>{let s=0;if(bank.documento&&report.documento&&norm(bank.documento)===norm(report.documento))s+=55;if(abs(abs(bank.valor)-abs(report.valor))<=tolerance)s+=30;if(bank.data&&bank.data===report.data)s+=15;if(norm(bank.descricao)&&norm(report.descricao)&&similar(norm(bank.descricao),norm(report.descricao))>.45)s+=10;if(s>score){score=s;best=report}});
+      if(best&&score>=45)used.add(best.id);
+      return{id:'doc-'+bank.id,bankId:bank.id,bankDescription:bank.descricao,bankValue:bank.valor,date:bank.data,document:(score>=45&&best?.documento)||bank.documento||'',matchedId:score>=45&&best?best.id:null,matchedDescription:score>=45&&best?best.descricao:'',confidence:Math.min(100,score),status:score>=80?'confirmado':score>=45?'revisar':'sem_correspondencia'};
+    });
     const byBank=new Map(matches.map(m=>[m.bankId,m])),enriched=records.map(record=>{const match=byBank.get(record.id);return{...record,documento:record.documento||match?.document||'',documentMatchId:match?.matchedId||null,documentConfidence:match?.confidence??null,documentStatus:match?.status||'origem',processedThrough:4}});
     return{records:classifyPosting(enriched,matches),matches};
   }
@@ -142,5 +196,5 @@
   function money(n){return Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
   function decimal(n){return Number(n||0).toFixed(2).replace('.',',')}
   function csvCell(v){const s=String(v??'');return/[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
-  window.ContabilEngines={splitPayments,matchDocuments,classifyPosting,reconcileTotals,applyAccounts,generateHistory,validate,buildLayout,money,decimal};
+  window.ContabilEngines={closeDaily,splitPayments,matchDocuments,classifyPosting,reconcileTotals,applyAccounts,generateHistory,validate,buildLayout,money,decimal};
 })();

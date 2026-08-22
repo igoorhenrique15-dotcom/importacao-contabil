@@ -1,19 +1,26 @@
 document.head.insertAdjacentHTML('beforeend','<link rel="stylesheet" href="../../assets/css/tools.css">');
-let closingRows=ContabilStore.active()?.dailyClosing||[],search='',filter='all';
+const eng=window.ContabilEngines;
 const records=()=>ContabilStore.active()?.records||[];
+// O resumo por data e derivado, nao guardado: se a etapa ja rodou, refaz com
+// a tolerancia salva.
+function saved(){const lot=ContabilStore.active();if(!lot||lot.steps?.[2]==='pending'||!lot.records?.length)return[];
+  try{return window.ContabilPipeline.resultOf(lot,2).rows}catch{return[]}}
+let closingRows=saved(),search='',filter='all';
 document.getElementById('run-closing').addEventListener('click',runClosing);
 document.getElementById('export-closing').addEventListener('click',exportClosing);
 document.getElementById('closing-search').addEventListener('input',e=>{search=e.target.value.toLowerCase();render()});
 document.getElementById('closing-filter').addEventListener('change',e=>{filter=e.target.value;render()});
 function runClosing(){
   const rows=records();if(!rows.length){status('Nenhum dado normalizado foi salvo. Volte ao Processo 01 e salve o resultado no lote.','error');return}
-  const tolerance=parseTolerance(document.getElementById('tolerance').value),byDate=new Map();
-  rows.forEach(r=>{const date=r.data||'Sem data';if(!byDate.has(date))byDate.set(date,{date,banco:[],relatorio:[]});const group=r.origem==='banco'?'banco':'relatorio';byDate.get(date)[group].push(r)});
-  closingRows=[...byDate.values()].map(x=>{const bank=x.banco.reduce((s,r)=>s+Number(r.valor||0),0),report=x.relatorio.reduce((s,r)=>s+Number(r.valor||0),0),diff=bank-report;let state=!x.banco.length||!x.relatorio.length?'incompleto':Math.abs(diff)<=tolerance?'conciliado':'divergente';return{date:x.date,bankCount:x.banco.length,bankTotal:bank,reportCount:x.relatorio.length,reportTotal:report,difference:diff,status:state}}).sort((a,b)=>dateSort(a.date)-dateSort(b.date));
-  const dailyByDate=new Map(closingRows.map(day=>[day.date,day])),enriched=rows.map(record=>{const day=dailyByDate.get(record.data)||{status:'incompleto',difference:0};return{...record,closingStatus:day.status,dailyDifference:day.difference,processedThrough:2}});ContabilStore.setClosing(closingRows,enriched,{tolerance});render();const divergent=closingRows.filter(r=>r.status==='divergente').length,incomplete=closingRows.filter(r=>r.status==='incompleto').length;status(divergent||incomplete?'Fechamento concluído com '+divergent+' divergência(s) e '+incomplete+' data(s) incompleta(s). Os lançamentos enriquecidos seguirão para o Processo 03.':'Fechamento concluído sem divergências. Os lançamentos seguirão para o Processo 03.',divergent||incomplete?'':'ok')
+  const tolerance=parseTolerance(document.getElementById('tolerance').value);
+  const resultado=eng.closeDaily(rows,{tolerance});
+  closingRows=resultado.rows;
+  ContabilStore.setClosing(closingRows,{tolerance});
+  render();
+  const divergent=closingRows.filter(r=>r.status==='divergente').length,incomplete=closingRows.filter(r=>r.status==='incompleto').length;
+  status(divergent||incomplete?'Fechamento concluído com '+divergent+' divergência(s) e '+incomplete+' data(s) incompleta(s). Os lançamentos seguirão para o Processo 03.':'Fechamento concluído sem divergências. Os lançamentos seguirão para o Processo 03.',divergent||incomplete?'':'ok')
 }
 function parseTolerance(v){const n=Number(String(v).replace(/\./g,'').replace(',','.').replace(/[^0-9.-]/g,''));return Number.isFinite(n)?Math.abs(n):.01}
-function dateSort(v){const m=String(v).match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?new Date(+m[3],+m[2]-1,+m[1]).getTime():Number.MAX_SAFE_INTEGER}
 function visible(){return closingRows.filter(r=>(filter==='all'||r.status===filter)&&(!search||r.date.toLowerCase().includes(search)))}
 function render(){
   const rows=visible(),body=document.getElementById('closing-body');body.innerHTML=rows.length?rows.map(rowHtml).join(''):'<tr><td colspan="7" class="empty">Nenhuma data para exibir.</td></tr>';

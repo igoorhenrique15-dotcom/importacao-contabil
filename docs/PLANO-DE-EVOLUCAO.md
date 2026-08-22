@@ -29,7 +29,7 @@ débitos contra a soma dos créditos. Um lote desbalanceado passa como válido.
 O mesmo teste mostra que o valor é exportado negativo. Em arquivo de importação
 contábil o valor é sempre positivo; a direção vem das contas.
 
-### 3. O limite de 10.000 lançamentos é falso — trava em uso real
+### 3. O limite de 10.000 lançamentos era falso — CORRIGIDO
 
 O estado vai para o `localStorage` (teto de 5 MB) e o lote guarda uma cópia
 enriquecida dos lançamentos para cada uma das oito etapas.
@@ -41,12 +41,14 @@ enriquecida dos lançamentos para cada uma das oito etapas.
 | 2.000 | 9,6 MB | estoura |
 | 5.000 | 24,0 MB | estoura |
 
-Na prática o trabalho é perdido a partir de ~1.000 lançamentos.
+Na prática o trabalho era perdido a partir de ~1.000 lançamentos. Com o estado
+reduzido à entrada, 10.000 lançamentos ocupam 3,2 MB e o limite virou real.
 
-### 4. O Processo 04 cresce ao quadrado — trava em uso real
+### 4. O Processo 04 crescia ao quadrado — CORRIGIDO
 
-`matchDocuments` compara cada movimento bancário com todos os itens do
-relatório. Mesmo defeito que o Processo 03 tinha.
+`matchDocuments` comparava cada movimento bancário com todos os itens do
+relatório. Mesmo defeito que o Processo 03 tinha. Depois da indexação, 4.000
+lançamentos levam 15 ms e 10.000 levam 130 ms.
 
 | Lançamentos | Aba travada |
 | ---: | ---: |
@@ -54,6 +56,7 @@ relatório. Mesmo defeito que o Processo 03 tinha.
 | 1.000 | 1,3 s |
 | 2.000 | 5,1 s |
 | 4.000 | 20,7 s |
+| 10.000 | ~2 min (estimado) |
 
 ## Fases
 
@@ -109,17 +112,30 @@ múltiplas partidas, a conferência de partida dobrada passa a ser necessária.
 **Pronto quando:** um arquivo gerado é importado numa empresa de teste, no
 software real, sem erro.
 
-### Fase 2 — Aguentar um lote de verdade
+### Fase 2 — Aguentar um lote de verdade — CONCLUÍDA
 
-- [ ] Trocar `localStorage` por IndexedDB.
-- [ ] Parar de guardar oito cópias do lote: guardar os lançamentos uma vez e só
-      os campos que cada etapa acrescenta.
-- [ ] Indexar `matchDocuments` por documento, valor e data — mesma técnica que
-      derrubou o Processo 03 de 13,8 s para 1 ms.
-- [ ] Anunciar o limite real, medido.
+- [x] `matchDocuments` indexado por documento e por data+valor. Um casamento só
+      é aceito a partir de 45 pontos, o que exige documento igual (55) ou valor
+      mais data (30+15) — todo par possível está num desses dois índices.
+      **4.000 lançamentos: de 20,7 s para 15 ms. 10.000: 130 ms**, com as
+      mesmas correspondências de antes.
+- [x] Parar de guardar as oito saídas. O disco guarda só a entrada — lançamentos
+      normalizados e configurações — e `pipeline.js` reconstrói o resto sob
+      demanda, com cache em memória.
+- [x] Limite de 10.000 registros **passou a ser verdadeiro**: o estado gravado
+      caiu de 43,9 MB para 3,2 MB nesse volume.
+- [x] Corrigido no caminho: o cache do pipeline usava `id + updatedAt` como
+      chave, e `updatedAt` tem resolução de milissegundo — duas gravações
+      seguidas podiam servir o resultado anterior. Agora é cache por objeto de
+      lote mais um contador de revisão.
 
-**Pronto quando:** um mês real percorre as oito etapas sem travar e o resultado
-sobrevive a recarregar a página.
+**IndexedDB não foi necessário.** A troca estava no plano por causa do teto de
+5 MB, mas o problema não era o `localStorage` — era guardar oito cópias do
+mesmo lote. Corrigida a causa, o teto deixou de ser alcançado. Volta ao plano
+se um lote precisar passar de 15.000 lançamentos.
+
+**Verificado:** o fluxo completo roda no navegador e o resultado sobrevive a
+recarregar a página, reconstruído a partir de 3.951 bytes de estado gravado.
 
 ### Fase 3 — Deixar o contador corrigir
 
@@ -164,3 +180,5 @@ manual, e a taxa de acerto é um número conhecido.
 - Invalidação em cadeia entre etapas.
 - Fase 0 completa: o arquivo final deixou de duplicar valor e passou a conferir
   contra o extrato antes de permitir exportação.
+- Fase 2 completa: o Processo 04 deixou de travar e um mês real cabe no
+  navegador, com o resultado reconstruído ao reabrir a página.

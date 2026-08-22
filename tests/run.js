@@ -3,5 +3,6 @@
 require('./parsers.test.js')();
 require('./engines.test.js')();
 require('./store.test.js')();
+require('./pipeline.test.js')();
 require('./static.test.js')();
 require('./harness').report();
