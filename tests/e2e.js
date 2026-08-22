@@ -60,6 +60,9 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
 
   console.log('\nprocesso 01 — normalização');
   await page.goto(base+'/processos/01-normalizacao/');
+  // Os arquivos de teste são de março; sem informar a competência, a
+  // validação (corretamente) marcaria tudo como fora do período.
+  await page.evaluate(()=>window.ContabilStore.updateLot({client:'Metalúrgica ACME',period:'2026-03',bank:'Itaú',system:'Questor'}));
   await page.setInputFiles('#file-banco',{name:'banco.csv',mimeType:'text/csv',buffer:Buffer.from(CSV_BANCO,'utf8')});
   await page.waitForSelector('#mapping-banco select');
   check('mapeou a data automaticamente',await page.inputValue('#map-banco-data')==='0',await page.inputValue('#map-banco-data'));
@@ -112,6 +115,19 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
     }
     if(step===7){
       check('validação aprovou lançamentos',/[1-9]\d* de \d+ lançamento\(s\) aprovados/.test(msg),msg);
+      // Trocar a competência precisa fazer os mesmos lançamentos virarem aviso.
+      await page.evaluate(()=>window.ContabilStore.updateLot({period:'2026-09'}));
+      await page.click('#run-engine');
+      await page.waitForSelector('#engine-result:not([hidden])');
+      // Registros que não viram lançamento não recebem aviso, então a busca é
+      // na tabela toda e não na primeira linha.
+      const tabela=await page.locator('.result-table tbody').innerText();
+      check('lançamento fora da competência é sinalizado',/fora da compet/i.test(tabela),tabela.replace(/\n/g,' | ').slice(0,200));
+      check('e o aviso nomeia a competência do lote',/09\/2026/.test(tabela),tabela.replace(/\n/g,' | ').slice(0,200));
+      await page.evaluate(()=>window.ContabilStore.updateLot({period:'2026-03'}));
+      await page.click('#run-engine');
+      await page.waitForSelector('#engine-result:not([hidden])');
+      check('e volta a aprovar com a competência certa',/[1-9]\d* de \d+ lançamento\(s\) aprovados/.test(await page.innerText('#engine-message')),await page.innerText('#engine-message'));
       check('o lote confere com o extrato',msg.includes('confere com o extrato')&&!msg.includes('NÃO confere'),msg);
       const grid=await page.locator('.reconcile-grid dd').allInnerTexts();
       check('a conferência mostra o valor do extrato',grid[0].includes('10.045,90'),grid.join(' | '));
@@ -208,6 +224,22 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
     check('nada derivado foi para o disco',lot.processResults===undefined&&lot.dailyClosing===undefined,Object.keys(lot).join(','));
     check('as configurações foram gravadas',!!lot.configs&&!!lot.configs['5'],JSON.stringify(lot.configs||{}).slice(0,120));
   }
+
+  console.log('\nregressão: restaurar e normalizar de novo');
+  // Restaurar o lote e normalizar o mesmo arquivo duplicava os lançamentos.
+  await page.goto(base+'/processos/01-normalizacao/');
+  await page.waitForSelector('#restore-saved');
+  await page.click('#restore-saved');
+  const antes=await page.locator('#output-body tr').count();
+  await page.setInputFiles('#file-banco',{name:'banco.csv',mimeType:'text/csv',buffer:Buffer.from(CSV_BANCO,'utf8')});
+  await page.waitForSelector('#mapping-banco select');
+  await page.click('#normalize-banco');
+  const depois=await page.locator('#output-body tr').count();
+  check('renormalizar não soma linhas ao que foi restaurado',depois===antes,'antes='+antes+' depois='+depois);
+  check('e avisa que substituiu a origem',(await page.innerText('#status')).includes('substituídos'),await page.innerText('#status'));
+  await page.click('#save-lot');
+  const gravados=await page.evaluate(()=>Object.values(JSON.parse(localStorage.getItem('contabil-flow:v2')).lots)[0].records.length);
+  check('o lote gravado não duplica',gravados===5,'gravados='+gravados);
 
   console.log('\nescape de conteúdo do arquivo');
   const CSV_XSS='DATA;DESCRICAO;VALOR\n<img src=x onerror=window.__xss=1>;"<b>NEGRITO</b>";-10,00\n';

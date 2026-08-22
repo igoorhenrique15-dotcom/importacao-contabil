@@ -163,13 +163,29 @@
   // Lotes gravados antes desta regra não têm o campo; nesse caso o registro
   // segue contabilizável, como era antes.
   function isPostable(r){return r.posting===undefined?true:r.posting==='lancamento'}
+  // A regra mais especifica vence, e nao a primeira cadastrada: com
+  // "pagamento" e "pagamento fornecedor" na lista, um pagamento a fornecedor
+  // precisa cair na segunda, independentemente da ordem de digitacao.
   function applyAccounts(records,{rules=[]}={}){
-    return records.map(record=>{const text=norm([record.descricao,record.documento].join(' '));const rule=rules.find(r=>text.includes(norm(r.keyword)));return{...record,accountDebit:rule?.debit||'',accountCredit:rule?.credit||'',accountRule:rule?.keyword||'',statusAccount:rule?'classificado':'pendente'}})
+    const ordenadas=rules.map(r=>({...r,alvo:norm(r.keyword)})).filter(r=>r.alvo).sort((a,b)=>b.alvo.length-a.alvo.length);
+    return records.map(record=>{
+      const text=norm([record.descricao,record.documento].join(' '));
+      const rule=ordenadas.find(r=>text.includes(r.alvo));
+      return{...record,accountDebit:rule?.debit||'',accountCredit:rule?.credit||'',accountRule:rule?.keyword||'',statusAccount:rule?'classificado':'pendente'};
+    });
   }
-  function generateHistory(records,{template='PAGAMENTO {descricao} - DOC {documento}',client=''}={}){
-    return records.map(r=>({...r,history:template.replace(/\{(descricao|documento|data|valor|cliente)\}/g,(_,key)=>({descricao:r.descricao||'',documento:r.documento||'',data:r.data||'',valor:money(r.valor),cliente:client}[key]||'')).replace(/\s+/g,' ').replace(/-\s*$/,'').trim(),statusHistory:'gerado'}))
+  // Sistemas contabeis limitam o tamanho do historico. Truncar aqui, de forma
+  // visivel, e melhor do que descobrir o corte na hora da importacao.
+  const HISTORICO_PADRAO=255;
+  function generateHistory(records,{template='PAGAMENTO {descricao} - DOC {documento}',client='',maxLength=HISTORICO_PADRAO}={}){
+    const limite=Number(maxLength)>0?Number(maxLength):HISTORICO_PADRAO;
+    return records.map(r=>{
+      const cheio=template.replace(/\{(descricao|documento|data|valor|cliente)\}/g,(_,key)=>({descricao:r.descricao||'',documento:r.documento||'',data:r.data||'',valor:money(r.valor),cliente:client}[key]||'')).replace(/\s+/g,' ').replace(/-\s*$/,'').trim();
+      const cortado=cheio.length>limite;
+      return{...r,history:cortado?cheio.slice(0,limite).trim():cheio,historyTruncated:cortado,statusHistory:'gerado'};
+    });
   }
-  function validate(records){
+  function validate(records,{period=''}={}){
     const seen=new Map();return records.map(r=>{
       const errors=[],warnings=[];
       // Quem não vira lançamento não precisa de conta nem de histórico: é
@@ -182,15 +198,29 @@
       if(!r.accountCredit)errors.push('Conta de crédito ausente');
       if(r.accountDebit&&r.accountDebit===r.accountCredit)errors.push('Débito e crédito na mesma conta');
       if(!r.history)errors.push('Histórico ausente');
-      const key=[r.data,r.documento,round(r.valor)].join('|');
-      if(seen.has(key))warnings.push('Possível duplicidade');
-      seen.set(key,true);
+      // Duplicidade so e apontada quando ha documento repetido. Sem documento,
+      // duas tarifas ou duas TEDs de mesmo valor no mesmo dia sao normais, e
+      // marca-las como suspeitas so ensinava a ignorar os avisos.
+      if(r.documento){
+        const key=[r.data,norm(r.documento),round(r.valor)].join('|');
+        if(seen.has(key))warnings.push('Documento já lançado nesta data e valor');
+        seen.set(key,true);
+      }
+      if(period&&r.data&&!naCompetencia(r.data,period))warnings.push('Data fora da competência '+formatarCompetencia(period));
+      if(r.historyTruncated)warnings.push('Histórico cortado no limite do layout');
       if(r.issues?.length)warnings.push(...r.issues);
       return{...r,validationErrors:errors,validationWarnings:warnings,validationStatus:errors.length?'erro':warnings.length?'aviso':'valido'};
     })
   }
   function buildLayout(records,{system='generico'}={}){
     const layouts={generico:{delimiter:';',header:['DATA','DEBITO','CREDITO','VALOR','HISTORICO','DOCUMENTO'],row:r=>[r.data,r.accountDebit,r.accountCredit,decimal(Math.abs(r.valor)),r.history,r.documento]},dominio:{delimiter:';',header:['DATA','CONTA_DEBITO','CONTA_CREDITO','VALOR','HISTORICO','DOCUMENTO'],row:r=>[r.data,r.accountDebit,r.accountCredit,decimal(Math.abs(r.valor)),r.history,r.documento]},alterdata:{delimiter:';',header:['DT_LCTO','CTA_DEBITO','CTA_CREDITO','VLR_LCTO','HISTORICO','NR_DOCUMENTO'],row:r=>[r.data,r.accountDebit,r.accountCredit,decimal(Math.abs(r.valor)),r.history,r.documento]}};const layout=layouts[system]||layouts.generico,valid=records.filter(r=>isPostable(r)&&(r.validationStatus==='valido'||r.validationStatus==='aviso'));const lines=[layout.header,...valid.map(layout.row)].map(cols=>cols.map(csvCell).join(layout.delimiter));return{system,rows:valid,count:valid.length,content:'\uFEFF'+lines.join('\r\n')}}
+  // A competencia do lote e AAAA-MM; a data do lancamento e DD/MM/AAAA.
+  function naCompetencia(data,period){
+    const m=String(data).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if(!m)return true;
+    return m[3]+'-'+m[2]===String(period).slice(0,7);
+  }
+  function formatarCompetencia(period){const [a,m]=String(period).split('-');return m?m+'/'+a:String(period)}
   function norm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}
   function similar(a,b){const aa=new Set(a.split(' ')),bb=new Set(b.split(' ')),common=[...aa].filter(x=>bb.has(x)).length;return common/Math.max(1,new Set([...aa,...bb]).size)}
   function money(n){return Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}

@@ -63,7 +63,14 @@ function normalize(source){
     const value=rawValue?(direct??0):(credit??0)-(debit??0);
     return{id:ContabilStore.uid('lan'),origem:source,arquivo:sourceState[source].fileName,linha:index+2,data:date.value,descricao:get('descricao'),valor:value,debito:debit??0,credito:credit??0,documento:get('documento'),status:rowIssues.length?'warning':'valid',issues:rowIssues,original:{data:get('data'),valor:rawValue,debito:rawDebit,credito:rawCredit}};
   }).filter(r=>r.data||r.descricao||r.valor||r.debito||r.credito||r.documento);
-  sourceState[source].issues=issues;page=1;renderOutput();setStatus(labelSource(source)+' normalizado: '+sourceState[source].rows.length+' registros, '+issues.length+' avisos.',issues.length?'':'ok');
+  // O que acabou de ser normalizado substitui o que foi restaurado da mesma
+  // origem: sem isso, restaurar e normalizar de novo duplicava o lote.
+  const restauradosAntes=restoredRows.length;
+  restoredRows=restoredRows.filter(r=>r.origem!==source);
+  const substituidos=restauradosAntes-restoredRows.length;
+  sourceState[source].issues=issues;page=1;renderOutput();
+  setStatus(labelSource(source)+' normalizado: '+sourceState[source].rows.length+' registros, '+issues.length+' avisos.'
+    +(substituidos?' '+substituidos+' registro(s) restaurados desta origem foram substituídos.':''),issues.length?'':'ok');
 }
 function allRows(){return[...sourceState.banco.rows,...sourceState.relatorio.rows,...restoredRows]}
 function filteredRows(){return allRows().filter(r=>!query||[r.descricao,r.documento,r.data,r.origem].some(v=>String(v).toLowerCase().includes(query)))}
@@ -79,8 +86,11 @@ function renderOutput(){
 function rowHtml(r){return'<tr><td>'+r.origem+'</td><td>'+escapeHtml(r.data)+'</td><td>'+escapeHtml(r.descricao)+'</td><td>'+money(r.valor)+'</td><td>'+money(r.debito)+'</td><td>'+money(r.credito)+'</td><td>'+escapeHtml(r.documento)+'</td><td><span class="status-chip '+(r.status==='warning'?'warn':'ok')+'">'+(r.status==='warning'?'Revisar':'Válido')+'</span></td></tr>'}
 function cardHtml(r){return'<article class="mobile-record"><div class="mobile-record-head"><strong>'+escapeHtml(r.descricao||'Sem descrição')+'</strong><span class="status-chip '+(r.status==='warning'?'warn':'ok')+'">'+(r.status==='warning'?'Revisar':'Válido')+'</span></div><dl><div><dt>Data</dt><dd>'+escapeHtml(r.data)+'</dd></div><div><dt>Valor</dt><dd>'+money(r.valor)+'</dd></div><div><dt>Origem</dt><dd>'+r.origem+'</dd></div><div><dt>Documento</dt><dd>'+escapeHtml(r.documento||'—')+'</dd></div></dl></article>'}
 function metric(label,value){return'<div class="metric"><small>'+label+'</small><strong>'+value+'</strong></div>'}
-function saveToLot(){const rows=allRows();try{ContabilStore.setRecords(rows,sourceState.banco.rows.length&&sourceState.relatorio.rows.length?'banco + relatório':rows[0]?.origem||'arquivo');setStatus('Resultado salvo no lote. O Processo 02 já pode usar estes dados.','ok');document.getElementById('resume-banner').classList.add('show')}catch(err){setStatus(err.message,'error')}}
-function restoreSaved(){restoredRows=ContabilStore.active()?.records||[];sourceState.banco.rows=[];sourceState.relatorio.rows=[];renderOutput();setStatus(restoredRows.length+' registros restaurados do lote.','ok')}
+function saveToLot(){const rows=allRows();
+  const ids=new Set(),repetidos=rows.filter(r=>ids.has(r.id)?true:(ids.add(r.id),false));
+  if(repetidos.length){setStatus('Há '+repetidos.length+' lançamento(s) repetidos na saída. Limpe as fontes e normalize novamente antes de salvar.','error');return}
+  try{ContabilStore.setRecords(rows,sourceState.banco.rows.length&&sourceState.relatorio.rows.length?'banco + relatório':rows[0]?.origem||'arquivo');setStatus('Resultado salvo no lote. O Processo 02 já pode usar estes dados.','ok');document.getElementById('resume-banner').classList.add('show')}catch(err){setStatus(err.message,'error')}}
+function restoreSaved(){restoredRows=ContabilStore.active()?.records||[];sourceState.banco.rows=[];sourceState.relatorio.rows=[];renderOutput();setStatus(restoredRows.length+' registros restaurados do lote. Normalizar um arquivo novo substitui os registros da mesma origem.','ok')}
 function saveTemplate(source){const name=document.getElementById('template-'+source).value.trim();if(!name){setStatus('Informe um nome para o modelo.','error');return}ContabilStore.saveTemplate('mapping:'+source,{name,mapping:currentMapping(source)});setStatus('Modelo “'+name+'” salvo para este lote.','ok')}
 function toggleSource(source,on){document.getElementById('normalize-'+source).disabled=!on;document.getElementById('reset-'+source).disabled=!on;document.getElementById('template-box-'+source).hidden=!on}
 function reset(source){sourceState[source]=freshSource();document.getElementById('file-'+source).value='';document.getElementById('name-'+source).textContent='Nenhum arquivo selecionado';document.getElementById('mapping-'+source).innerHTML='';toggleSource(source,false);renderOutput();setStatus(labelSource(source)+' removido.')}

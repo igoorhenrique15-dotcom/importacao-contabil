@@ -197,6 +197,19 @@ module.exports=function(){
   }
   eq('sem regras nada é classificado',E.applyAccounts([{descricao:'X',documento:''}],{}).length,1);
 
+  {
+    // A ordem de digitação das regras não pode decidir a classificação.
+    const regras=[{keyword:'pagamento',debit:'9.9',credit:'9.9'},{keyword:'pagamento fornecedor',debit:'2.1',credit:'1.1'}];
+    eq('a regra mais específica vence, venha na ordem que vier',
+      E.applyAccounts([{descricao:'PAGAMENTO FORNECEDOR ACME',documento:''}],{rules:regras})[0].accountRule,'pagamento fornecedor');
+    eq('e o mesmo com a ordem invertida',
+      E.applyAccounts([{descricao:'PAGAMENTO FORNECEDOR ACME',documento:''}],{rules:[...regras].reverse()})[0].accountRule,'pagamento fornecedor');
+    eq('a regra genérica ainda pega o que é só dela',
+      E.applyAccounts([{descricao:'PAGAMENTO DIVERSOS',documento:''}],{rules:regras})[0].accountRule,'pagamento');
+    eq('regra com palavra-chave vazia é ignorada',
+      E.applyAccounts([{descricao:'X',documento:''}],{rules:[{keyword:'  ',debit:'1',credit:'2'}]})[0].statusAccount,'pendente');
+  }
+
   suite('generateHistory');
   {
     const out=E.generateHistory([{descricao:'ACME',documento:'NF-1',data:'05/03/2026',valor:-500}],{template:'PAGAMENTO {descricao} - DOC {documento}',client:'Cliente X'});
@@ -206,6 +219,15 @@ module.exports=function(){
   eq('remove o traço solto sem documento',E.generateHistory([{descricao:'ACME',documento:'',data:'',valor:0}],{})[0].history,'PAGAMENTO ACME - DOC');
   eq('preenche o cliente',E.generateHistory([{descricao:'X',documento:'',data:'',valor:0}],{template:'{cliente}',client:'ACME'})[0].history,'ACME');
 
+  {
+    const longo=E.generateHistory([{descricao:'X'.repeat(400),documento:'NF-1',data:'',valor:0}],{})[0];
+    eq('histórico é cortado no limite padrão',longo.history.length,255);
+    eq('e o corte é sinalizado',longo.historyTruncated,true);
+    const curto=E.generateHistory([{descricao:'ACME',documento:'NF-1',data:'',valor:0}],{})[0];
+    eq('histórico dentro do limite não é marcado',curto.historyTruncated,false);
+    eq('limite configurável',E.generateHistory([{descricao:'X'.repeat(400),documento:'',data:'',valor:0}],{maxLength:40})[0].history.length,40);
+  }
+
   suite('validate');
   {
     const base={data:'05/03/2026',descricao:'X',valor:10,accountDebit:'1',accountCredit:'2',history:'H'};
@@ -214,10 +236,26 @@ module.exports=function(){
     eq('valor zero é erro',E.validate([{...base,valor:0}])[0].validationStatus,'erro');
     eq('sem conta de débito é erro',E.validate([{...base,accountDebit:''}])[0].validationStatus,'erro');
     eq('sem histórico é erro',E.validate([{...base,history:''}])[0].validationStatus,'erro');
-    const dup=E.validate([base,{...base}]);
+    // Duplicidade só é apontada com documento repetido: duas tarifas de mesmo
+    // valor no mesmo dia são normais e não podem virar aviso.
+    const comDoc={...base,documento:'NF-77'};
+    const dup=E.validate([comDoc,{...comDoc}]);
     eq('primeira ocorrência passa',dup[0].validationStatus,'valido');
-    eq('duplicidade vira aviso',dup[1].validationStatus,'aviso');
+    eq('mesmo documento, data e valor vira aviso',dup[1].validationStatus,'aviso');
+    ok('e o aviso diz o que houve',dup[1].validationWarnings.some(w=>/Documento já lançado/.test(w)),dup[1].validationWarnings.join(' | '));
+    const semDoc=E.validate([{...base,descricao:'TARIFA TED',valor:-15,documento:''},{...base,descricao:'TARIFA TED',valor:-15,documento:''}]);
+    eq('sem documento não há falso positivo',semDoc[1].validationStatus,'valido');
+    const outroValor=E.validate([comDoc,{...comDoc,valor:99}]);
+    eq('mesmo documento com valor diferente não é duplicidade',outroValor[1].validationStatus,'valido');
     eq('avisos anteriores são mantidos',E.validate([{...base,issues:['Data não reconhecida']}])[0].validationWarnings.includes('Data não reconhecida'),true);
+    // Competência: um lançamento de outro mês no arquivo é erro clássico de
+    // fechamento e passava despercebido.
+    const fora=E.validate([{...base,data:'15/11/2025'}],{period:'2026-03'});
+    eq('data fora da competência vira aviso',fora[0].validationStatus,'aviso');
+    ok('e o aviso nomeia a competência',fora[0].validationWarnings.some(w=>w.includes('03/2026')),fora[0].validationWarnings.join(' | '));
+    eq('data dentro da competência passa',E.validate([{...base,data:'15/03/2026'}],{period:'2026-03'})[0].validationStatus,'valido');
+    eq('sem competência definida não há aviso',E.validate([{...base,data:'15/11/2025'}])[0].validationStatus,'valido');
+    eq('histórico cortado vira aviso',E.validate([{...base,historyTruncated:true}])[0].validationWarnings.some(w=>/cortado/.test(w)),true);
   }
 
   suite('buildLayout');

@@ -42,15 +42,35 @@ correspondências.
 Aplica regras configuráveis por palavra-chave. Cada regra define uma conta de
 débito e uma de crédito. Lançamentos sem regra permanecem pendentes.
 
+Quando mais de uma regra bate, **vence a mais específica** — a de palavra-chave
+mais longa — e não a primeira cadastrada. Com `pagamento` e
+`pagamento fornecedor` na lista, um pagamento a fornecedor cai na segunda,
+independentemente da ordem de digitação.
+
+As regras são guardadas por cliente: um lote novo da mesma empresa já abre com
+as regras do lote anterior.
+
 ## 06 — Histórico
 
 Gera históricos por modelo. Campos disponíveis: descrição, documento, data,
 valor e cliente.
 
+O histórico é cortado no limite configurado (255 caracteres por padrão) e o
+corte é sinalizado na validação. Sistemas contábeis limitam esse campo, e
+descobrir o corte na hora da importação é pior do que vê-lo antes.
+
 ## 07 — Validação
 
-Confere data, descrição, valor, contas, histórico, avisos anteriores e possíveis
-duplicidades, e recusa débito e crédito na mesma conta. O resultado separa
+Confere data, descrição, valor, contas, histórico, avisos anteriores e recusa
+débito e crédito na mesma conta.
+
+Duplicidade só é apontada quando o **mesmo documento** aparece na mesma data e
+valor. Sem documento não há aviso: duas tarifas ou duas TEDs de mesmo valor no
+mesmo dia são normais, e marcá-las como suspeitas só ensinava a ignorar todos
+os avisos.
+
+Lançamentos com data fora da competência do lote também viram aviso — é erro
+clássico de fechamento e passava despercebido. O resultado separa
 registros válidos, com avisos, com erros e não contabilizados.
 
 Registros que não viram lançamento (`agregador`, `espelho`, `pendencia`) saem

@@ -50,6 +50,16 @@ Receber arquivos do banco e/ou relatório do cliente e transformar colunas difer
 
 Esses itens pertencem aos processos seguintes.
 
+## Restaurar e normalizar de novo
+
+Restaurar traz para a tela os lançamentos já salvos no lote. Se depois disso um
+arquivo da mesma origem for normalizado, ele **substitui** os registros
+restaurados daquela origem, e a tela avisa quantos foram substituídos. Sem essa
+regra, restaurar e renormalizar duplicava silenciosamente o lote.
+
+Salvar no lote recusa a gravação se houver identificador repetido na saída — é
+a última defesa contra duplicação vinda de qualquer caminho.
+
 ## Onde ficam as regras
 
 Os leitores e normalizadores puros (`parseDelimited`, `parseOfx`, `parseMoney`,

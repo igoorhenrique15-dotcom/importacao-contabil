@@ -28,7 +28,7 @@
     if(step===4)saida=eng().matchDocuments(anterior,cfg).records;
     if(step===5)saida=eng().applyAccounts(anterior,cfg);
     if(step===6)saida=eng().generateHistory(anterior,cfg);
-    if(step===7)saida=eng().validate(anterior);
+    if(step===7)saida=eng().validate(anterior,{period:lot.period});
     saida=aplicarCorrecoes(saida,lot.overrides);
     b.set(k,saida);
     return saida;
