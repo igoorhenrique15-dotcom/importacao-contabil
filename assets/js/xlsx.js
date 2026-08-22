@@ -8,13 +8,18 @@
   // calculadas — o valor lido é o último que o Excel gravou.
   const td=new TextDecoder('utf-8');
 
-  async function readXlsx(buffer){
+  // Devolve as linhas da aba pedida e a lista de abas na ordem em que
+  // aparecem no Excel, para que a pagina possa oferecer a escolha.
+  async function readXlsx(buffer,{sheet=0}={}){
     const arquivos=await unzip(new Uint8Array(buffer));
-    const planilha=escolherPlanilha(arquivos);
-    if(!planilha)throw new Error('A planilha não contém abas legíveis.');
+    const abas=listarAbas(arquivos);
+    if(!abas.length)throw new Error('A planilha não contém abas legíveis.');
+    const indice=Math.min(Math.max(0,Number(sheet)||0),abas.length-1);
+    const conteudo=arquivos[abas[indice].arquivo];
+    if(!conteudo)throw new Error('A aba “'+abas[indice].nome+'” não pôde ser lida.');
     const strings=lerSharedStrings(arquivos['xl/sharedStrings.xml']);
     const datas=lerFormatosDeData(arquivos['xl/styles.xml']);
-    return lerLinhas(planilha,strings,datas);
+    return{rows:lerLinhas(conteudo,strings,datas),sheets:abas.map(a=>a.nome),sheet:indice};
   }
 
   // ---------- ZIP ----------
@@ -44,7 +49,7 @@
     return arquivos;
   }
   function interessa(nome){
-    return nome==='xl/sharedStrings.xml'||nome==='xl/styles.xml'||nome==='xl/workbook.xml'||/^xl\/worksheets\/sheet\d+\.xml$/.test(nome);
+    return nome==='xl/sharedStrings.xml'||nome==='xl/styles.xml'||nome==='xl/workbook.xml'||nome==='xl/_rels/workbook.xml.rels'||/^xl\/worksheets\/sheet\d+\.xml$/.test(nome);
   }
   // O comentário final do ZIP tem tamanho variável, então a assinatura do
   // End of Central Directory é procurada de trás para frente.
@@ -64,10 +69,29 @@
     if(doc.querySelector('parsererror'))throw new Error('A planilha está corrompida ou em formato não suportado.');
     return doc;
   }
-  function escolherPlanilha(arquivos){
-    const nomes=Object.keys(arquivos).filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n))
-      .sort((a,b)=>Number(a.match(/(\d+)/)[1])-Number(b.match(/(\d+)/)[1]));
-    return nomes.length?arquivos[nomes[0]]:null;
+  // A ordem das abas esta no workbook, nao no nome do arquivo: reordenar abas
+  // no Excel nao renomeia sheet1.xml, entao confiar no numero fazia o leitor
+  // pegar a aba errada em silencio.
+  function listarAbas(arquivos){
+    const disponiveis=Object.keys(arquivos).filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+    const workbook=arquivos['xl/workbook.xml'],rels=arquivos['xl/_rels/workbook.xml.rels'];
+    if(workbook){
+      try{
+        const alvos=new Map();
+        if(rels)[...xml(rels).getElementsByTagName('Relationship')].forEach(r=>{
+          const destino=r.getAttribute('Target')||'';
+          alvos.set(r.getAttribute('Id'),'xl/'+destino.replace(/^\/?xl\//,'').replace(/^\.\//,''));
+        });
+        const abas=[...xml(workbook).getElementsByTagName('sheet')].map((sheet,i)=>{
+          const id=sheet.getAttribute('r:id')||sheet.getAttributeNS?.('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');
+          const arquivo=alvos.get(id);
+          return{nome:sheet.getAttribute('name')||'Planilha '+(i+1),arquivo:arquivo&&arquivos[arquivo]?arquivo:null};
+        }).filter(a=>a.arquivo);
+        if(abas.length)return abas;
+      }catch{/* workbook ilegivel: cai para a ordem dos arquivos */}
+    }
+    return disponiveis.sort((a,b)=>Number(a.match(/(\d+)/)[1])-Number(b.match(/(\d+)/)[1]))
+      .map((arquivo,i)=>({nome:'Planilha '+(i+1),arquivo}));
   }
   function lerSharedStrings(texto){
     if(!texto)return[];
@@ -142,5 +166,5 @@
     d.setUTCDate(d.getUTCDate()+ajustado);
     return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear();
   }
-  window.ContabilXlsx={readXlsx,serialParaData,indiceDaColuna};
+  window.ContabilXlsx={readXlsx,listarAbas,serialParaData,indiceDaColuna};
 })();

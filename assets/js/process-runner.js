@@ -170,7 +170,7 @@
     if(v==null)return'';
     if(Array.isArray(v))return v.join(' · ');
     if(typeof v==='boolean')return v?'sim':'nao';
-    if(typeof v==='number')return eng.decimal(v);
+    if(typeof v==='number')return Number.isInteger(v)?String(v):eng.decimal(v);
     return String(v);
   }
   function csvCell(v){const t=String(v??'');return/[;"\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t}

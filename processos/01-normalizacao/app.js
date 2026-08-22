@@ -11,7 +11,7 @@ const fields=[
 ];
 let page=1,query='',restoredRows=[];
 const pageSize=50;
-function freshSource(){return{raw:[],headers:[],rows:[],file:null,fileName:'',issues:[]}}
+function freshSource(){return{raw:[],headers:[],rows:[],file:null,fileName:'',issues:[],buffer:null,sheets:[],sheet:0}}
 ['banco','relatorio'].forEach(source=>{
   const input=document.getElementById('file-'+source),zone=input.closest('.dropzone');
   input.addEventListener('change',e=>loadFile(source,e.target.files[0]));
@@ -35,21 +35,56 @@ async function loadFile(source,file){
   if(!file)return;
   if(file.size>25*1024*1024){setStatus('O arquivo excede o limite local de 25 MB. Divida-o antes de continuar.','error');return}
   try{
-    const parsed=await lerArquivo(file);
-    if(parsed.length<2)throw new Error('Não foi possível identificar cabeçalho e registros.');
-    Object.assign(sourceState[source],{file,fileName:file.name,headers:parsed[0].map((h,i)=>String(h||'COLUNA_'+(i+1)).trim()),raw:parsed.slice(1).filter(row=>row.some(v=>String(v).trim())),rows:[],issues:[]});
-    document.getElementById('name-'+source).textContent=file.name+' · '+sourceState[source].raw.length+' linhas';
-    buildMapping(source);toggleSource(source,true);renderOutput();setStatus('Arquivo '+file.name+' carregado. Confira o mapeamento antes de normalizar.');
+    aplicarLeitura(source,await lerArquivo(file),file);
+    const estado=sourceState[source];
+    setStatus('Arquivo '+file.name+' carregado'
+      +(estado.sheets.length>1?' ('+estado.sheets.length+' abas — lendo “'+estado.sheets[estado.sheet]+'”)':'')
+      +'. Confira o mapeamento antes de normalizar.');
   }catch(err){setStatus(err.message||'Não foi possível ler o arquivo.','error')}
 }
 // Cada formato tem seu leitor; o resto do processo trabalha sempre com linhas.
-async function lerArquivo(file){
+async function lerArquivo(file,sheet=0){
   if(/\.xlsx?$/i.test(file.name)||/sheet|excel/i.test(file.type||'')){
     if(/\.xls$/i.test(file.name))throw new Error('Formato .xls antigo não é suportado. Salve como .xlsx ou CSV no Excel.');
-    return window.ContabilXlsx.readXlsx(await file.arrayBuffer());
+    const buffer=await file.arrayBuffer();
+    const {rows,sheets,sheet:usada}=await window.ContabilXlsx.readXlsx(buffer,{sheet});
+    return{rows,sheets,sheet:usada,buffer};
   }
   const text=await readText(file);
-  return /\.ofx$/i.test(file.name)||/<OFX>/i.test(text)?parseOfx(text):parseDelimited(text);
+  return{rows:/\.ofx$/i.test(file.name)||/<OFX>/i.test(text)?parseOfx(text):parseDelimited(text),sheets:[],sheet:0,buffer:null};
+}
+// Troca a aba sem pedir o arquivo de novo.
+async function trocarAba(source,indice){
+  const estado=sourceState[source];if(!estado.buffer)return;
+  try{
+    const {rows,sheet}=await window.ContabilXlsx.readXlsx(estado.buffer,{sheet:indice});
+    aplicarLeitura(source,{rows,sheets:estado.sheets,sheet,buffer:estado.buffer},estado.file);
+    setStatus('Aba “'+estado.sheets[sheet]+'” carregada com '+estado.raw.length+' linha(s). Confira o mapeamento.','ok');
+  }catch(err){setStatus(err.message||'Não foi possível ler esta aba.','error')}
+}
+function aplicarLeitura(source,leitura,file){
+  const linhas=leitura.rows;
+  if(linhas.length<2)throw new Error('Não foi possível identificar cabeçalho e registros.');
+  Object.assign(sourceState[source],{file,fileName:file.name,buffer:leitura.buffer,sheets:leitura.sheets,sheet:leitura.sheet,
+    headers:linhas[0].map((h,i)=>String(h||'COLUNA_'+(i+1)).trim()),
+    raw:linhas.slice(1).filter(row=>row.some(v=>String(v).trim())),rows:[],issues:[]});
+  const estado=sourceState[source];
+  document.getElementById('name-'+source).textContent=file.name+(estado.sheets.length>1?' · aba '+estado.sheets[estado.sheet]:'')+' · '+estado.raw.length+' linhas';
+  renderAbas(source);buildMapping(source);toggleSource(source,true);renderOutput();
+}
+// Planilha de cliente costuma ter varias abas; ler sempre a primeira seria
+// adivinhacao.
+function renderAbas(source){
+  const estado=sourceState[source];
+  let caixa=document.getElementById('abas-'+source);
+  if(estado.sheets.length<2){if(caixa)caixa.remove();return}
+  if(!caixa){
+    caixa=document.createElement('div');caixa.className='field';caixa.id='abas-'+source;
+    document.getElementById('mapping-'+source).before(caixa);
+  }
+  caixa.innerHTML='<label for="aba-'+source+'">Aba da planilha</label><select id="aba-'+source+'">'
+    +estado.sheets.map((nome,i)=>'<option value="'+i+'"'+(i===estado.sheet?' selected':'')+'>'+escapeHtml(nome)+'</option>').join('')+'</select>';
+  caixa.querySelector('select').addEventListener('change',e=>trocarAba(source,Number(e.target.value)));
 }
 function readText(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{const bytes=new Uint8Array(reader.result);let text=new TextDecoder('utf-8',{fatal:false}).decode(bytes);if(text.includes('�'))text=new TextDecoder('windows-1252').decode(bytes);resolve(text)};reader.onerror=()=>reject(new Error('Falha ao ler o arquivo.'));reader.readAsArrayBuffer(file)})}
 function buildMapping(source){
@@ -100,7 +135,7 @@ function saveToLot(){const rows=allRows();
 function restoreSaved(){restoredRows=ContabilStore.active()?.records||[];sourceState.banco.rows=[];sourceState.relatorio.rows=[];renderOutput();setStatus(restoredRows.length+' registros restaurados do lote. Normalizar um arquivo novo substitui os registros da mesma origem.','ok')}
 function saveTemplate(source){const name=document.getElementById('template-'+source).value.trim();if(!name){setStatus('Informe um nome para o modelo.','error');return}ContabilStore.saveTemplate('mapping:'+source,{name,mapping:currentMapping(source)});setStatus('Modelo “'+name+'” salvo para este lote.','ok')}
 function toggleSource(source,on){document.getElementById('normalize-'+source).disabled=!on;document.getElementById('reset-'+source).disabled=!on;document.getElementById('template-box-'+source).hidden=!on}
-function reset(source){sourceState[source]=freshSource();document.getElementById('file-'+source).value='';document.getElementById('name-'+source).textContent='Nenhum arquivo selecionado';document.getElementById('mapping-'+source).innerHTML='';toggleSource(source,false);renderOutput();setStatus(labelSource(source)+' removido.')}
+function reset(source){sourceState[source]=freshSource();document.getElementById('file-'+source).value='';document.getElementById('name-'+source).textContent='Nenhum arquivo selecionado';document.getElementById('mapping-'+source).innerHTML='';document.getElementById('abas-'+source)?.remove();toggleSource(source,false);renderOutput();setStatus(labelSource(source)+' removido.')}
 function exportCsv(){const rows=allRows();if(!rows.length)return;const header=['ID','ORIGEM','ARQUIVO','LINHA_ORIGINAL','DATA','DESCRICAO','VALOR','DEBITO','CREDITO','DOCUMENTO','STATUS'];const lines=[header,...rows.map(r=>[r.id,r.origem,r.arquivo,r.linha,r.data,r.descricao,decimalBR(r.valor),decimalBR(r.debito),decimalBR(r.credito),r.documento,r.status])].map(cols=>cols.map(csvCell).join(';'));const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='contabil-flow-normalizado.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);ContabilStore.addAudit('CSV exportado',rows.length+' registros')}
 function csvCell(v){const s=String(v??'');return/[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
 function decimalBR(n){return Number(n||0).toFixed(2).replace('.',',')}

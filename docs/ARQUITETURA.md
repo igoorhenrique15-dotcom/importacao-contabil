@@ -46,6 +46,14 @@ hora — a correção não escapa do controle.
 O botão de desfazer remove **todas** as correções daquele lançamento, não só a
 da etapa em que se está.
 
+Renormalizar gera identificadores novos, então as correções da versão anterior
+deixam de casar com qualquer lançamento e são descartadas — o descarte fica
+registrado na trilha. Sem isso elas ficariam gravadas para sempre, ocupando
+espaço e sem efeito.
+
+Editar o contexto do lote também invalida o que já foi calculado, porque a
+competência entra na validação.
+
 As regras de conta do Processo 05 são guardadas por cliente, em
 `state.rulesByClient`, e não dentro do lote: o plano de contas de uma empresa
 não muda de um mês para o outro. Um lote novo do mesmo cliente já abre com as

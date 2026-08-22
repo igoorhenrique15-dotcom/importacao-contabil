@@ -28,6 +28,11 @@ partir dele.
 
 Fórmulas não são calculadas — o valor lido é o último que o Excel gravou.
 
+A ordem das abas vem do `workbook.xml`, não do nome do arquivo interno:
+reordenar abas no Excel não renomeia `sheet1.xml`, e confiar no número fazia o
+leitor abrir a aba errada em silêncio. Quando a planilha tem mais de uma aba, a
+página mostra um seletor e trocar de aba relê o arquivo já carregado.
+
 ## Campos normalizados
 
 - `ORIGEM`

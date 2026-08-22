@@ -87,6 +87,33 @@ module.exports=function(){
     eq('remoção deixa o outro lote ativo',store.active().id,b.id);
   }
   {
+    // Renormalizar gera identificadores novos: correções da versão anterior
+    // deixam de casar com qualquer lançamento e não podem ficar gravadas.
+    const {store}=freshStore();
+    store.createLot({client:'ACME'});
+    store.setRecords([rec(1),rec(2)],'banco');
+    store.setOverride('r1',{accountDebit:'2.1.01'});
+    store.setOverride('r2',{history:'H'});
+    eq('as duas correções ficam guardadas',Object.keys(store.active().overrides).length,2);
+    // r1 continua existindo, r2 não.
+    store.setRecords([rec(1),{...rec(9)}],'banco');
+    eq('a correção órfã é descartada',store.active().overrides.r2,undefined);
+    eq('a do lançamento que sobreviveu é mantida',store.active().overrides.r1.accountDebit,'2.1.01');
+    ok('e o descarte fica na trilha',/correção/.test(store.active().audit[0].detail),store.active().audit[0].detail);
+  }
+  {
+    // A competência entra na validação: mexer no contexto tem de invalidar o
+    // que já foi calculado, senão um aviso falso fica na tela até recarregar.
+    const {store}=freshStore();
+    let limpezas=0;
+    global.window={ContabilPipeline:{clear(){limpezas++}}};
+    store.createLot({client:'ACME',period:'2026-03'});
+    const revAntes=store.active().rev;
+    store.updateLot({period:'2025-11'});
+    ok('editar o contexto avança a revisão do lote',store.active().rev>revAntes,'antes='+revAntes+' depois='+store.active().rev);
+    delete global.window;
+  }
+  {
     // Regras de conta acompanham o cliente, nao o lote.
     const {store}=freshStore();
     const regras=[{keyword:'ferro velho',debit:'2.1.01.002',credit:'1.1.01.002'}];

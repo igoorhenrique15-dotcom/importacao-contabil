@@ -41,8 +41,7 @@ const CSV_BANCO='DATA;HISTORICO;VALOR;DOCUMENTO\n05/03/2026;SISPAG FORNECEDORES;
 // Monta um .xlsx minimo em memoria: ZIP com os XML que o leitor consome.
 // STORED (sem compressao) mantem o teste sem dependencia de biblioteca.
 function xlsxDeTeste(){
-  const enc=new (require('util').TextEncoder)();
-  const arquivos=[
+  return zipDeTeste([
     ['xl/sharedStrings.xml','<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
       +['DATA','DESCRICAO','VALOR','DOCUMENTO','SISPAG FORNECEDORES','TARIFA PACOTE'].map(v=>'<si><t>'+v+'</t></si>').join('')+'</sst>'],
     ['xl/styles.xml','<?xml version="1.0"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs></styleSheet>'],
@@ -51,7 +50,10 @@ function xlsxDeTeste(){
       +'<row r="2"><c r="A2" s="1"><v>46081</v></c><c r="B2" t="s"><v>4</v></c><c r="C2"><v>-10000</v></c><c r="D2" t="inlineStr"><is><t>NF-100</t></is></c></row>'
       +'<row r="3"><c r="A3" s="1"><v>46081</v></c><c r="B3" t="s"><v>5</v></c><c r="C3"><v>-45.9</v></c></row>'
       +'<row r="9"><c r="A9"/></row></sheetData></worksheet>']
-  ];
+  ]);
+}
+function zipDeTeste(arquivos){
+  const enc=new (require('util').TextEncoder)();
   const crcTable=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
   const crc32=b=>{let c=0xFFFFFFFF;for(const x of b)c=crcTable[(c^x)&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0};
   const partes=[],central=[];let offset=0;
@@ -73,6 +75,25 @@ function xlsxDeTeste(){
   fim.writeUInt32LE(0x06054b50,0);fim.writeUInt16LE(arquivos.length,8);fim.writeUInt16LE(arquivos.length,10);
   fim.writeUInt32LE(dir.length,12);fim.writeUInt32LE(corpo.length,16);
   return Buffer.concat([corpo,dir,fim]);
+}
+
+// Planilha com duas abas onde a primeira do Excel esta em sheet2.xml — e o
+// que acontece quando alguem reordena abas.
+function xlsxDuasAbas(){
+  const R='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const S='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const aba=(a,b)=>'<?xml version="1.0"?><worksheet xmlns="'+S+'"><sheetData>'
+    +'<row r="1"><c r="A1" t="inlineStr"><is><t>DESCRICAO</t></is></c><c r="B1" t="inlineStr"><is><t>VALOR</t></is></c></row>'
+    +'<row r="2"><c r="A2" t="inlineStr"><is><t>'+a+'</t></is></c><c r="B2"><v>'+b+'</v></c></row></sheetData></worksheet>';
+  return zipDeTeste([
+    ['xl/workbook.xml','<?xml version="1.0"?><workbook xmlns="'+S+'" xmlns:r="'+R+'"><sheets>'
+      +'<sheet name="Extrato" sheetId="2" r:id="rId2"/><sheet name="Resumo" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+    ['xl/_rels/workbook.xml.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      +'<Relationship Id="rId1" Type="'+R+'/worksheet" Target="worksheets/sheet1.xml"/>'
+      +'<Relationship Id="rId2" Type="'+R+'/worksheet" Target="worksheets/sheet2.xml"/></Relationships>'],
+    ['xl/worksheets/sheet1.xml',aba('LINHA DO RESUMO','1')],
+    ['xl/worksheets/sheet2.xml',aba('LINHA DO EXTRATO','2')]
+  ]);
 }
 
 const CSV_REL='DATA;DESCRICAO;VALOR;DOCUMENTO\n05/03/2026;FORNECEDOR JOAO;-5.000,00;NF-100\n05/03/2026;FERRO VELHO;-5.000,00;NF-200\n05/03/2026;FORNECEDOR AINDA NAO PAGO;-800,00;NF-300\n';
@@ -294,6 +315,28 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
     check('valor negativo preservado',linhas[0].includes('10.000,00'),linhas[0].replace(/\t/g,' | '));
     check('texto embutido na célula é lido',linhas[0].includes('NF-100'),linhas[0].replace(/\t/g,' | '));
   }
+
+  console.log('\nplanilha com várias abas');
+  await page.goto(base+'/processos/01-normalizacao/');
+  await page.setInputFiles('#file-relatorio',{name:'multi.xlsx',
+    mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:xlsxDuasAbas()});
+  await page.waitForSelector('#abas-relatorio select',{timeout:8000});
+  {
+    const opcoes=await page.locator('#abas-relatorio option').allInnerTexts();
+    check('as abas são listadas na ordem do Excel',opcoes.join(',')==='Extrato,Resumo',opcoes.join(','));
+    check('e a primeira aba de verdade é a lida',await page.inputValue('#aba-relatorio')==='0');
+    await page.click('#normalize-relatorio');
+    let linhas=await page.locator('#output-body tr').allInnerTexts();
+    check('lê o conteúdo da aba certa',linhas[0].includes('LINHA DO EXTRATO'),linhas[0].replace(/\t/g,' | '));
+    // Trocar de aba não pode exigir escolher o arquivo de novo.
+    await page.selectOption('#aba-relatorio','1');
+    await page.waitForFunction(()=>document.getElementById('name-relatorio').textContent.includes('Resumo'),{timeout:5000});
+    await page.click('#normalize-relatorio');
+    linhas=await page.locator('#output-body tr').allInnerTexts();
+    check('trocar de aba relê sem pedir o arquivo',linhas[0].includes('LINHA DO RESUMO'),linhas[0].replace(/\t/g,' | '));
+  }
+  await page.click('#reset-relatorio');
+  check('limpar remove o seletor de abas',await page.locator('#abas-relatorio').count()===0);
 
   console.log('\nexportar em cada etapa');
   for(const [slug,step] of [['03-desmembramento',3],['04-notas-fiscais',4],['05-contas-contabeis',5],['06-historico',6],['07-validacao',7]]){

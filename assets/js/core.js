@@ -11,10 +11,25 @@
   function createLot(data={}){const id=uid('lote'),now=new Date().toISOString();state.lots[id]={id,client:data.client||'',period:data.period||'',bank:data.bank||'',account:data.account||'',system:data.system||'',createdAt:now,updatedAt:now,rev:1,currentStep:1,steps:{1:'in_progress',2:'pending',3:'pending',4:'pending',5:'pending',6:'pending',7:'pending',8:'pending'},records:[],configs:{},overrides:{},audit:[{id:uid('aud'),at:now,action:'Lote criado',detail:'Contexto inicial registrado'}],templates:{}};state.activeLotId=id;persist();return state.lots[id]}
   function active(){return state.activeLotId?state.lots[state.activeLotId]||null:null}
   function ensure(){return active()||createLot({client:'Novo cliente',period:new Date().toISOString().slice(0,7)})}
-  function updateLot(data){const lot=ensure();Object.assign(lot,data,{updatedAt:new Date().toISOString()});addAudit('Contexto atualizado','Dados gerais do lote foram salvos',false);persist();return lot}
+  // A competencia do lote entra na validacao, entao mexer no contexto invalida
+  // o que ja foi calculado — sem isto, corrigir a competencia deixava um aviso
+  // falso na tela ate recarregar a pagina.
+  function updateLot(data){const lot=ensure();Object.assign(lot,data,{updatedAt:new Date().toISOString()});lot.rev=(lot.rev||0)+1;window.ContabilPipeline?.clear();addAudit('Contexto atualizado','Dados gerais do lote foram salvos',false);persist();return lot}
   function addAudit(action,detail='',save=true){const lot=ensure();lot.audit.unshift({id:uid('aud'),at:new Date().toISOString(),action,detail});lot.audit=lot.audit.slice(0,100);if(save)persist()}
   function invalidateAfter(lot,step){lot.rev=(lot.rev||0)+1;window.ContabilPipeline?.clear();lot.configs=lot.configs||{};for(let i=Number(step)+1;i<=8;i++){delete lot.configs[i];lot.steps[i]='pending'}lot.currentStep=Math.min(8,Number(step)+1)}
-  function setRecords(records,source){if(records.length>LIMITE)throw new Error('O lote excede o limite local de '+LIMITE.toLocaleString('pt-BR')+' registros. Divida o processamento.');const lot=ensure();lot.records=records;invalidateAfter(lot,1);lot.steps[1]='complete';lot.updatedAt=new Date().toISOString();addAudit('Normalização salva',records.length+' registros · '+source,false);if(!persist())throw new Error('Não foi possível salvar o lote neste dispositivo. Exporte o CSV para preservar o resultado.')}
+// Renormalizar gera identificadores novos, e as correcoes da versao anterior
+  // deixariam de casar com qualquer lancamento. Sem poda elas ficariam gravadas
+  // para sempre, ocupando espaco e sem efeito nenhum.
+  function podarOverrides(lot){
+    if(!lot.overrides)return 0;
+    const vivos=new Set((lot.records||[]).map(r=>r.id));
+    const orfas=Object.keys(lot.overrides).filter(id=>!vivos.has(id));
+    orfas.forEach(id=>delete lot.overrides[id]);
+    return orfas.length;
+  }
+  function setRecords(records,source){if(records.length>LIMITE)throw new Error('O lote excede o limite local de '+LIMITE.toLocaleString('pt-BR')+' registros. Divida o processamento.');const lot=ensure();lot.records=records;invalidateAfter(lot,1);lot.steps[1]='complete';lot.updatedAt=new Date().toISOString();
+    const orfas=podarOverrides(lot);
+    addAudit('Normalização salva',records.length+' registros · '+source+(orfas?' · '+orfas+' correção(ões) manuais descartadas':''),false);if(!persist())throw new Error('Não foi possível salvar o lote neste dispositivo. Exporte o CSV para preservar o resultado.')}
   function setClosing(rows,config={}){const lot=ensure();invalidateAfter(lot,2);lot.configs[2]=config;lot.steps[2]=rows.some(r=>r.status==='divergente'||r.status==='incompleto')?'warning':'complete';addAudit('Fechamento diário executado',rows.length+' datas analisadas',false);if(!persist())throw new Error('Não foi possível salvar o fechamento neste dispositivo.')}
   function setProcessResult(step,result,status='complete',config={}){const lot=ensure();lot.configs=lot.configs||{};invalidateAfter(lot,step);lot.configs[step]=config;lot.steps[step]=status;lot.updatedAt=new Date().toISOString();const count=Array.isArray(result)?result.length:Array.isArray(result?.records)?result.records.length:'Resultado';addAudit('Processo '+String(step).padStart(2,'0')+' executado',count+(typeof count==='number'?' lançamento(s) transformado(s)':''),false);if(!persist())throw new Error('Não foi possível salvar o resultado neste dispositivo.');return result}
   // Correcao manual de um lancamento. Vale sobre o que os motores calculam e
@@ -61,6 +76,7 @@
       audit:Array.isArray(origem.audit)?origem.audit.slice(0,100):[],
       templates:origem.templates&&typeof origem.templates==='object'?origem.templates:{}
     };
+    podarOverrides(state.lots[id]);
     state.activeLotId=id;window.ContabilPipeline?.clear();
     addAudit('Lote importado',state.lots[id].records.length+' lançamento(s)',false);
     if(!persist())throw new Error('Não foi possível salvar o lote importado neste dispositivo.');
