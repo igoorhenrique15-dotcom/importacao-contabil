@@ -127,6 +127,28 @@ Processo 08 recusa a exportação quando o lote não confere.
 O valor exportado é sempre positivo: a direção do lançamento vem das contas de
 débito e crédito, não do sinal.
 
+## Backup e vários lotes
+
+Tudo vive no navegador, então limpar os dados do site ou trocar de computador
+apagaria o trabalho. A barra do lote traz **Backup**, que exporta o lote inteiro
+em JSON — lançamentos, configurações, correções manuais e trilha — e importa de
+volta criando um lote novo, sem sobrescrever o atual.
+
+O arquivo importado vem de fora e é tratado como tal: formato conferido, tipos
+validados campo a campo e limite de lançamentos respeitado antes de qualquer
+coisa entrar no estado.
+
+O seletor ao lado troca de lote e cria lotes novos, para atender mais de um
+cliente no mesmo navegador.
+
+> O backup contém lançamentos do cliente. Guarde-o com o mesmo cuidado dos
+> arquivos originais e nunca o adicione ao repositório.
+
+## Exportação por etapa
+
+Cada processo exporta a própria saída em CSV, com as colunas acumuladas até
+ali, para conferência fora do sistema. O Processo 08 exporta o layout final.
+
 ## Conteúdo vindo dos arquivos
 
 Descrições, documentos e datas saem do arquivo do usuário e podem conter

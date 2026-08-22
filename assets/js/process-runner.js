@@ -64,11 +64,11 @@
     const box=document.getElementById('engine-controls');
     if(step===3)box.innerHTML=configWrap('<div class="form-field"><label for="engine-tolerance">Tolerância (R$)</label><input id="engine-tolerance" inputmode="decimal" value="'+(lot.configs?.[3]?.tolerance??'0,01')+'"></div>')+actions('Executar desmembramento');
     if(step===4)box.innerHTML=configWrap('<div class="form-field"><label for="match-tolerance">Tolerância de valor (R$)</label><input id="match-tolerance" inputmode="decimal" value="'+(lot.configs?.[4]?.tolerance??'0,01')+'"></div>')+actions('Identificar documentos');
-    if(step===5){box.innerHTML='<div class="engine-config"><div class="form-field"><label for="rule-keyword">Palavra-chave</label><input id="rule-keyword" placeholder="Ex.: fornecedor"></div><div class="form-field"><label for="rule-debit">Conta de débito</label><input id="rule-debit" placeholder="Ex.: 2.1.01.001"></div><div class="form-field"><label for="rule-credit">Conta de crédito</label><input id="rule-credit" placeholder="Ex.: 1.1.01.001"></div></div><div class="engine-actions"><button id="add-rule" type="button" class="secondary">Adicionar regra</button><button id="run-engine" type="button">Classificar contas</button></div><div id="rule-list" class="rule-list"></div>'+(lot.configs?.[5]?.rules?'':store.clientRules()?'<p class="engine-note">Regras carregadas do último lote de '+esc(lot.client||'este cliente')+'.</p>':'');renderRules();document.getElementById('add-rule').addEventListener('click',addRule)}
+    if(step===5){box.innerHTML='<div class="engine-config"><div class="form-field"><label for="rule-keyword">Palavra-chave</label><input id="rule-keyword" placeholder="Ex.: fornecedor"></div><div class="form-field"><label for="rule-debit">Conta de débito</label><input id="rule-debit" placeholder="Ex.: 2.1.01.001"></div><div class="form-field"><label for="rule-credit">Conta de crédito</label><input id="rule-credit" placeholder="Ex.: 1.1.01.001"></div></div><div class="engine-actions"><button id="add-rule" type="button" class="secondary">Adicionar regra</button><button id="run-engine" type="button">Classificar contas</button>'+exportButton()+'</div><div id="rule-list" class="rule-list"></div>'+(lot.configs?.[5]?.rules?'':store.clientRules()?'<p class="engine-note">Regras carregadas do último lote de '+esc(lot.client||'este cliente')+'.</p>':'');renderRules();document.getElementById('add-rule').addEventListener('click',addRule)}
     if(step===6)box.innerHTML=configWrap('<div class="form-field full-field"><label for="history-template">Modelo do histórico</label><input id="history-template" value="'+attr(lot.configs?.[6]?.template||'PAGAMENTO {descricao} - DOC {documento}')+'"></div><div class="form-field"><label for="history-max">Limite de caracteres</label><input id="history-max" inputmode="numeric" value="'+(lot.configs?.[6]?.maxLength??255)+'"></div>')+'<p class="engine-note">Campos disponíveis: {descricao}, {documento}, {data}, {valor} e {cliente}. Históricos acima do limite são cortados e sinalizados na validação.</p>'+actions('Gerar históricos');
     if(step===7)box.innerHTML='<div class="privacy-note"><b>✓</b><span>A validação confere data, descrição, valor, contas, histórico, duplicidades e avisos das etapas anteriores.</span></div>'+actions('Executar validação');
     if(step===8)box.innerHTML=configWrap('<div class="form-field"><label for="layout-system">Layout de destino</label><select id="layout-system"><option value="generico">CSV genérico</option><option value="dominio">Domínio</option><option value="alterdata">Alterdata</option></select></div>')+'<div class="engine-actions"><button id="run-engine" type="button">Gerar layout</button><button id="download-layout" type="button" class="secondary" disabled>Baixar arquivo</button></div>';
-    document.getElementById('run-engine')?.addEventListener('click',run);document.getElementById('download-layout')?.addEventListener('click',downloadLayout)
+    document.getElementById('run-engine')?.addEventListener('click',run);document.getElementById('download-layout')?.addEventListener('click',downloadLayout);document.getElementById('export-step')?.addEventListener('click',exportStep)
   }
   function run(){
     const base=inputs();if(!base.length){message('Este processo ainda não possui dados de entrada. Conclua e salve as etapas anteriores.','error');return}
@@ -138,10 +138,49 @@
   }
   function table(headers,rows,total){return'<div class="table-wrap"><table class="result-table"><thead><tr>'+headers.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+rows.map(cols=>'<tr>'+cols.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'+truncated(rows.length,total)}
   function truncated(shown,total){return total>shown?'<p class="engine-note">Exibindo '+shown+' de '+total+' lançamentos. O resultado completo segue salvo no lote e é usado pela próxima etapa.</p>':''}
-  function actions(label){return'<div class="engine-actions"><button id="run-engine" type="button">'+label+'</button></div>'}
+  function actions(label){return'<div class="engine-actions"><button id="run-engine" type="button">'+label+'</button>'+exportButton()+'</div>'}
+  function exportButton(){return'<button id="export-step" type="button" class="secondary"'+(lot.steps?.[step]==='pending'?' disabled':'')+'>Exportar CSV desta etapa</button>'}
+  // Cada etapa exporta a propria saida, com as colunas acumuladas ate ali.
+  // Serve para conferir o trabalho fora do sistema, etapa por etapa.
+  const COLUNAS={
+    3:[['ID','id'],['ORIGEM','origem'],['DATA','data'],['DESCRICAO','descricao'],['VALOR','valor'],['DOCUMENTO','documento'],
+       ['DESMEMBRAMENTO','splitStatus'],['VINCULADO_A','splitParentId']],
+    4:[['ID','id'],['ORIGEM','origem'],['DATA','data'],['DESCRICAO','descricao'],['VALOR','valor'],['DOCUMENTO','documento'],
+       ['CONFIANCA','documentConfidence'],['STATUS_DOCUMENTO','documentStatus'],['VAI_PARA_ARQUIVO','posting'],['MOTIVO','postingMotivo']],
+    5:[['ID','id'],['ORIGEM','origem'],['DATA','data'],['DESCRICAO','descricao'],['VALOR','valor'],['DOCUMENTO','documento'],
+       ['VAI_PARA_ARQUIVO','posting'],['CONTA_DEBITO','accountDebit'],['CONTA_CREDITO','accountCredit'],['REGRA','accountRule'],['STATUS_CONTA','statusAccount']],
+    6:[['ID','id'],['ORIGEM','origem'],['DATA','data'],['DESCRICAO','descricao'],['VALOR','valor'],['DOCUMENTO','documento'],
+       ['CONTA_DEBITO','accountDebit'],['CONTA_CREDITO','accountCredit'],['HISTORICO','history'],['HISTORICO_CORTADO','historyTruncated']],
+    7:[['ID','id'],['ORIGEM','origem'],['DATA','data'],['DESCRICAO','descricao'],['VALOR','valor'],['DOCUMENTO','documento'],
+       ['VAI_PARA_ARQUIVO','posting'],['CONTA_DEBITO','accountDebit'],['CONTA_CREDITO','accountCredit'],['HISTORICO','history'],
+       ['RESULTADO','validationStatus'],['ERROS','validationErrors'],['AVISOS','validationWarnings']]
+  };
+  function exportStep(){
+    const colunas=COLUNAS[step];if(!colunas)return;
+    let linhas;
+    try{linhas=window.ContabilPipeline.upTo(store.active(),step)}catch(err){message(err.message||'Não foi possível montar a exportação.','error');return}
+    if(!linhas.length){message('Não há resultado para exportar nesta etapa.','error');return}
+    const csv=[colunas.map(c=>c[0]),...linhas.map(r=>colunas.map(([,campo])=>celula(r[campo])))]
+      .map(cols=>cols.map(csvCell).join(';')).join('\r\n');
+    baixar('\uFEFF'+csv,'contabil-flow-processo-'+String(step).padStart(2,'0')+'.csv');
+    store.addAudit('Processo '+String(step).padStart(2,'0')+' exportado',linhas.length+' lançamento(s)');
+    message(linhas.length+' lançamento(s) exportados.','ok');
+  }
+  function celula(v){
+    if(v==null)return'';
+    if(Array.isArray(v))return v.join(' · ');
+    if(typeof v==='boolean')return v?'sim':'nao';
+    if(typeof v==='number')return eng.decimal(v);
+    return String(v);
+  }
+  function csvCell(v){const t=String(v??'');return/[;"\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t}
+  function baixar(conteudo,nome){
+    const blob=new Blob([conteudo],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=nome;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   function configWrap(inner){return'<div class="engine-config">'+inner+'</div>'}
   function message(text,type=''){const el=document.getElementById('engine-message');el.textContent=text;el.className=('notice '+type).trim()}
-  function setEngineState(state){const el=document.getElementById('engine-state');el.textContent=statusLabel(state);el.className='status-chip '+(state==='complete'?'ok':'warn')}
+  function setEngineState(state){const btn=document.getElementById('export-step');if(btn)btn.disabled=false;const el=document.getElementById('engine-state');el.textContent=statusLabel(state);el.className='status-chip '+(state==='complete'?'ok':'warn')}
   function successMessage(result,state){if(step===3)return result.records.length+' lançamentos seguiram adiante; '+result.matches.length+' pagamento(s) agrupado(s) identificado(s).';if(step===4){const c=eng.reconcileTotals(result.records,{tolerance:.01});return result.records.filter(r=>r.posting==='lancamento').length+' lançamento(s) contábeis identificados de '+result.records.length+' registros. '+(c.confere?'O total confere com o extrato.':'Atenção: o total não confere com o extrato.')}if(step===5)return result.filter(r=>r.statusAccount==='classificado').length+' de '+result.length+' lançamento(s) classificados.';if(step===6)return result.length+' histórico(s) gerado(s).';if(step===7){const c=eng.reconcileTotals(result,{tolerance:.01});return result.filter(r=>r.validationStatus==='valido').length+' de '+result.filter(r=>r.validationStatus!=='pendente').length+' lançamento(s) aprovados sem avisos. '+(c.confere?'O lote confere com o extrato.':'O lote NÃO confere com o extrato: '+money(c.diferenca)+' de diferença.')}return result.count+' lançamento(s) preparados para exportação.'}
   function defaultRules(){return[{keyword:'tarifa',debit:'4.1.01.001',credit:'1.1.01.001'},{keyword:'fornecedor',debit:'2.1.01.001',credit:'1.1.01.001'},{keyword:'recebimento',debit:'1.1.01.001',credit:'3.1.01.001'},{keyword:'cliente',debit:'1.1.01.001',credit:'3.1.01.001'}]}
   function titles(){return{3:'Desmembrar pagamentos agrupados',4:'Identificar documentos e notas',5:'Classificar contas por regras',6:'Gerar históricos padronizados',7:'Validar o lote completo',8:'Gerar arquivo de importação'}}

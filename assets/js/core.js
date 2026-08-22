@@ -36,6 +36,36 @@
     addAudit('Correção desfeita',recordId,false);persist();
   }
   function overridesOf(){return ensure().overrides||{}}
+  // Backup do lote. Tudo vive no navegador, entao limpar os dados do site ou
+  // trocar de maquina perderia o trabalho sem isto.
+  function exportLot(id){
+    const lot=id?state.lots[id]:active();if(!lot)return null;
+    return{formato:'contabil-flow/lote',versao:2,exportadoEm:new Date().toISOString(),lote:lot};
+  }
+  // O arquivo vem de fora: nada e aproveitado sem checagem de forma.
+  function importLot(payload){
+    if(!payload||payload.formato!=='contabil-flow/lote')throw new Error('Arquivo não reconhecido. Selecione um backup gerado por este sistema.');
+    const origem=payload.lote;
+    if(!origem||typeof origem!=='object')throw new Error('O arquivo não contém um lote.');
+    if(!Array.isArray(origem.records))throw new Error('O arquivo não contém lançamentos.');
+    if(origem.records.length>LIMITE)throw new Error('O backup tem mais de '+LIMITE.toLocaleString('pt-BR')+' lançamentos.');
+    const id=uid('lote'),agora=new Date().toISOString();
+    const etapas={};for(let i=1;i<=8;i++)etapas[i]=typeof origem.steps?.[i]==='string'?origem.steps[i]:'pending';
+    state.lots[id]={
+      id,client:String(origem.client||'Lote importado'),period:String(origem.period||''),
+      bank:String(origem.bank||''),account:String(origem.account||''),system:String(origem.system||''),
+      createdAt:String(origem.createdAt||agora),updatedAt:agora,rev:1,
+      currentStep:Number(origem.currentStep)||1,steps:etapas,
+      records:origem.records,configs:origem.configs&&typeof origem.configs==='object'?origem.configs:{},
+      overrides:origem.overrides&&typeof origem.overrides==='object'?origem.overrides:{},
+      audit:Array.isArray(origem.audit)?origem.audit.slice(0,100):[],
+      templates:origem.templates&&typeof origem.templates==='object'?origem.templates:{}
+    };
+    state.activeLotId=id;window.ContabilPipeline?.clear();
+    addAudit('Lote importado',state.lots[id].records.length+' lançamento(s)',false);
+    if(!persist())throw new Error('Não foi possível salvar o lote importado neste dispositivo.');
+    return state.lots[id];
+  }
   // Regras de conta valem para o cliente, nao para o lote: o plano de contas
   // de uma empresa nao muda de um mes para o outro.
   function chaveCliente(nome){return String(nome||'').trim().toLowerCase()||'sem-cliente'}
@@ -53,5 +83,5 @@
   function listLots(){return Object.values(state.lots).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))}
   function saveTemplate(name,value){const lot=ensure();lot.templates[name]=value;persist()}
   function getTemplate(name){return ensure().templates[name]}
-  window.ContabilStore={uid,active,ensure,createLot,updateLot,addAudit,setRecords,setClosing,setProcessResult,setOverride,clearOverride,overridesOf,saveClientRules,clientRules,setStep,switchLot,removeLot,listLots,saveTemplate,getTemplate,get state(){return state}};
+  window.ContabilStore={uid,active,ensure,createLot,updateLot,addAudit,setRecords,setClosing,setProcessResult,setOverride,clearOverride,overridesOf,saveClientRules,clientRules,exportLot,importLot,setStep,switchLot,removeLot,listLots,saveTemplate,getTemplate,get state(){return state}};
 })();

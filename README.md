@@ -15,6 +15,7 @@ cada etapa é salvo no navegador e alimenta a seguinte.
 | --- | --- |
 | `assets/js/core.js` | Estado do lote, persistência local e invalidação em cadeia. |
 | `assets/js/parsers.js` | Leitura de CSV/TXT/OFX e normalização de valores e datas. |
+| `assets/js/xlsx.js` | Leitura de planilhas .xlsx, sem dependências. |
 | `assets/js/engines.js` | Regras dos processos 02 a 08. |
 | `assets/js/pipeline.js` | Reconstrói a saída de cada etapa a partir da entrada gravada. |
 | `assets/js/process-runner.js` | Interface dos motores 03 a 08. |
@@ -57,13 +58,15 @@ Sem o pacote instalado ele se declara pulado em vez de falhar.
 - contas, histórico e destino de cada lançamento corrigíveis na tela, com a
   correção sobrevivendo a reexecutar a etapa;
 - contexto do lote e progresso persistidos somente no navegador;
+- backup do lote em JSON, com importação, e troca entre lotes de clientes;
+- exportação em CSV em todas as oito etapas;
 - só a entrada é gravada; o resultado de cada etapa é recalculado sob demanda,
   o que faz um lote de 10.000 lançamentos caber no navegador;
 - contrato de dados compartilhado e trilha de auditoria local.
 
 Entrada:
-- arquivo do banco (CSV, TXT delimitado ou OFX);
-- relatório do cliente (CSV ou TXT delimitado).
+- arquivo do banco (CSV, TXT delimitado, OFX ou XLSX);
+- relatório do cliente (CSV, TXT delimitado ou XLSX).
 
 Saída padronizada:
 - origem;

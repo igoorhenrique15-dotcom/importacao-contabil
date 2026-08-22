@@ -38,6 +38,43 @@ const server=http.createServer((req,res)=>{
 // Extrato do Itaú: um SISPAG aglutinando dois fornecedores, mais uma tarifa.
 const CSV_BANCO='DATA;HISTORICO;VALOR;DOCUMENTO\n05/03/2026;SISPAG FORNECEDORES;-10.000,00;\n05/03/2026;TARIFA PACOTE SERVICOS;-45,90;\n';
 // Relatório: o detalhe por fornecedor, mais um título ainda não pago.
+// Monta um .xlsx minimo em memoria: ZIP com os XML que o leitor consome.
+// STORED (sem compressao) mantem o teste sem dependencia de biblioteca.
+function xlsxDeTeste(){
+  const enc=new (require('util').TextEncoder)();
+  const arquivos=[
+    ['xl/sharedStrings.xml','<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      +['DATA','DESCRICAO','VALOR','DOCUMENTO','SISPAG FORNECEDORES','TARIFA PACOTE'].map(v=>'<si><t>'+v+'</t></si>').join('')+'</sst>'],
+    ['xl/styles.xml','<?xml version="1.0"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs></styleSheet>'],
+    ['xl/worksheets/sheet1.xml','<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+      +'<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c></row>'
+      +'<row r="2"><c r="A2" s="1"><v>46081</v></c><c r="B2" t="s"><v>4</v></c><c r="C2"><v>-10000</v></c><c r="D2" t="inlineStr"><is><t>NF-100</t></is></c></row>'
+      +'<row r="3"><c r="A3" s="1"><v>46081</v></c><c r="B3" t="s"><v>5</v></c><c r="C3"><v>-45.9</v></c></row>'
+      +'<row r="9"><c r="A9"/></row></sheetData></worksheet>']
+  ];
+  const crcTable=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+  const crc32=b=>{let c=0xFFFFFFFF;for(const x of b)c=crcTable[(c^x)&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0};
+  const partes=[],central=[];let offset=0;
+  for(const [nome,conteudo] of arquivos){
+    const dados=enc.encode(conteudo),nomeBytes=enc.encode(nome),crc=crc32(dados);
+    const local=Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50,0);local.writeUInt16LE(20,4);local.writeUInt16LE(0,8);
+    local.writeUInt32LE(crc,14);local.writeUInt32LE(dados.length,18);local.writeUInt32LE(dados.length,22);
+    local.writeUInt16LE(nomeBytes.length,26);
+    partes.push(local,Buffer.from(nomeBytes),Buffer.from(dados));
+    const cd=Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50,0);cd.writeUInt16LE(20,4);cd.writeUInt16LE(20,6);cd.writeUInt16LE(0,10);
+    cd.writeUInt32LE(crc,16);cd.writeUInt32LE(dados.length,20);cd.writeUInt32LE(dados.length,24);
+    cd.writeUInt16LE(nomeBytes.length,28);cd.writeUInt32LE(offset,42);
+    central.push(cd,Buffer.from(nomeBytes));
+    offset+=30+nomeBytes.length+dados.length;
+  }
+  const corpo=Buffer.concat(partes),dir=Buffer.concat(central),fim=Buffer.alloc(22);
+  fim.writeUInt32LE(0x06054b50,0);fim.writeUInt16LE(arquivos.length,8);fim.writeUInt16LE(arquivos.length,10);
+  fim.writeUInt32LE(dir.length,12);fim.writeUInt32LE(corpo.length,16);
+  return Buffer.concat([corpo,dir,fim]);
+}
+
 const CSV_REL='DATA;DESCRICAO;VALOR;DOCUMENTO\n05/03/2026;FORNECEDOR JOAO;-5.000,00;NF-100\n05/03/2026;FERRO VELHO;-5.000,00;NF-200\n05/03/2026;FORNECEDOR AINDA NAO PAGO;-800,00;NF-300\n';
 
 let fails=0;
@@ -240,6 +277,70 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
   await page.click('#save-lot');
   const gravados=await page.evaluate(()=>Object.values(JSON.parse(localStorage.getItem('contabil-flow:v2')).lots)[0].records.length);
   check('o lote gravado não duplica',gravados===5,'gravados='+gravados);
+
+  console.log('\nplanilha .xlsx');
+  await page.goto(base+'/processos/01-normalizacao/');
+  await page.setInputFiles('#file-banco',{name:'extrato.xlsx',
+    mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:xlsxDeTeste()});
+  await page.waitForSelector('#mapping-banco select',{timeout:8000});
+  {
+    check('a planilha é lida',(await page.innerText('#name-banco')).includes('2 linhas'),await page.innerText('#name-banco'));
+    check('mapeia a data pelo cabeçalho',await page.inputValue('#map-banco-data')==='0');
+    check('mapeia o valor pelo cabeçalho',await page.inputValue('#map-banco-valor')==='2');
+    await page.click('#normalize-banco');
+    const linhas=await page.locator('#output-body tr').allInnerTexts();
+    check('duas linhas normalizadas (a vazia é descartada)',linhas.length===2,String(linhas.length));
+    check('data serial do Excel vira DD/MM/AAAA',linhas[0].includes('28/02/2026'),linhas[0].replace(/\t/g,' | '));
+    check('valor negativo preservado',linhas[0].includes('10.000,00'),linhas[0].replace(/\t/g,' | '));
+    check('texto embutido na célula é lido',linhas[0].includes('NF-100'),linhas[0].replace(/\t/g,' | '));
+  }
+
+  console.log('\nexportar em cada etapa');
+  for(const [slug,step] of [['03-desmembramento',3],['04-notas-fiscais',4],['05-contas-contabeis',5],['06-historico',6],['07-validacao',7]]){
+    await page.goto(base+'/processos/'+slug+'/');
+    await page.waitForSelector('#export-step',{timeout:8000});
+    check('processo 0'+step+' tem botão de exportar',await page.locator('#export-step').count()===1);
+  }
+
+  console.log('\nbackup e troca de lote');
+  await page.goto(base+'/processos/01-normalizacao/');
+  await page.waitForSelector('[data-backup]');
+  {
+    check('a barra do lote tem seletor',await page.locator('[data-switch-lot]').count()===1);
+    check('e botão de backup',await page.locator('[data-backup]').count()===1);
+    await page.click('[data-backup]');
+    // Captura o arquivo que o botão gera, sem depender de download real.
+    const baixado=await page.evaluate(()=>new Promise(r=>{
+      const orig=URL.createObjectURL;let capturado=null;
+      URL.createObjectURL=b=>{capturado=b;return orig.call(URL,b)};
+      document.querySelector('[data-export-lot]').click();
+      setTimeout(async()=>{URL.createObjectURL=orig;r(capturado?await capturado.text():null)},300);
+    }));
+    check('exportar gera um arquivo',!!baixado,String(baixado).slice(0,80));
+    const backup=JSON.parse(baixado);
+    check('o backup se identifica',backup.formato==='contabil-flow/lote',backup.formato);
+    check('e leva os lançamentos',Array.isArray(backup.lote.records)&&backup.lote.records.length>0,String(backup.lote.records?.length));
+    check('junto com as correções manuais',typeof backup.lote.overrides==='object');
+
+    // Importar o backup precisa criar um lote novo com o mesmo conteúdo.
+    const antes=await page.evaluate(()=>window.ContabilStore.listLots().length);
+    const resultado=await page.evaluate(dados=>{
+      try{const l=window.ContabilStore.importLot(dados);return{ok:true,registros:l.records.length,cliente:l.client}}
+      catch(e){return{ok:false,erro:e.message}}
+    },backup);
+    check('importar funciona',resultado.ok,resultado.erro||'');
+    check('com os mesmos lançamentos',resultado.registros===backup.lote.records.length,String(resultado.registros));
+    const depois=await page.evaluate(()=>window.ContabilStore.listLots().length);
+    check('e cria um lote novo, sem sobrescrever',depois===antes+1,'antes='+antes+' depois='+depois);
+
+    // Arquivo estranho precisa ser recusado com mensagem clara.
+    const lixo=await page.evaluate(()=>{
+      try{window.ContabilStore.importLot({qualquer:'coisa'});return null}catch(e){return e.message}});
+    check('backup de outro formato é recusado',/não reconhecido/i.test(lixo||''),String(lixo));
+    const semLancamentos=await page.evaluate(()=>{
+      try{window.ContabilStore.importLot({formato:'contabil-flow/lote',lote:{client:'X'}});return null}catch(e){return e.message}});
+    check('backup sem lançamentos é recusado',/não contém lançamentos/i.test(semLancamentos||''),String(semLancamentos));
+  }
 
   console.log('\nescape de conteúdo do arquivo');
   const CSV_XSS='DATA;DESCRICAO;VALOR\n<img src=x onerror=window.__xss=1>;"<b>NEGRITO</b>";-10,00\n';

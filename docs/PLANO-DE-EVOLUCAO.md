@@ -170,6 +170,16 @@ o extrato, o Processo 08 recusa a exportação do mesmo jeito.
 **Pronto quando:** um mês real fechado pelo sistema bate com o fechamento
 manual, e a taxa de acerto é um número conhecido.
 
+## Entregue fora das fases
+
+- **Leitura de XLSX** no Processo 01, sem dependências: o `.xlsx` é um ZIP com
+  XML e o navegador já traz `DecompressionStream` e `DOMParser`. Datas seriais
+  convertidas respeitando o 29/02/1900 fantasma.
+- **Backup do lote** em JSON, com importação validada, e **seletor de lotes**
+  para atender mais de um cliente no mesmo navegador.
+- **Exportação em CSV em todas as oito etapas**, com as colunas acumuladas até
+  cada uma.
+
 ## Decisões tomadas
 
 1. **Sistema contábil de destino: Questor.** Falta a especificação de

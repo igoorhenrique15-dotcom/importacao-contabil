@@ -33,16 +33,23 @@ if(existing.length)document.getElementById('resume-banner').classList.add('show'
 
 async function loadFile(source,file){
   if(!file)return;
-  if(file.size>15*1024*1024){setStatus('O arquivo excede o limite local de 15 MB. Divida-o antes de continuar.','error');return}
+  if(file.size>25*1024*1024){setStatus('O arquivo excede o limite local de 25 MB. Divida-o antes de continuar.','error');return}
   try{
-    const text=await readText(file);
-    const isOfx=/\.ofx$/i.test(file.name)||/<OFX>/i.test(text);
-    const parsed=isOfx?parseOfx(text):parseDelimited(text);
+    const parsed=await lerArquivo(file);
     if(parsed.length<2)throw new Error('Não foi possível identificar cabeçalho e registros.');
     Object.assign(sourceState[source],{file,fileName:file.name,headers:parsed[0].map((h,i)=>String(h||'COLUNA_'+(i+1)).trim()),raw:parsed.slice(1).filter(row=>row.some(v=>String(v).trim())),rows:[],issues:[]});
     document.getElementById('name-'+source).textContent=file.name+' · '+sourceState[source].raw.length+' linhas';
     buildMapping(source);toggleSource(source,true);renderOutput();setStatus('Arquivo '+file.name+' carregado. Confira o mapeamento antes de normalizar.');
   }catch(err){setStatus(err.message||'Não foi possível ler o arquivo.','error')}
+}
+// Cada formato tem seu leitor; o resto do processo trabalha sempre com linhas.
+async function lerArquivo(file){
+  if(/\.xlsx?$/i.test(file.name)||/sheet|excel/i.test(file.type||'')){
+    if(/\.xls$/i.test(file.name))throw new Error('Formato .xls antigo não é suportado. Salve como .xlsx ou CSV no Excel.');
+    return window.ContabilXlsx.readXlsx(await file.arrayBuffer());
+  }
+  const text=await readText(file);
+  return /\.ofx$/i.test(file.name)||/<OFX>/i.test(text)?parseOfx(text):parseDelimited(text);
 }
 function readText(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{const bytes=new Uint8Array(reader.result);let text=new TextDecoder('utf-8',{fatal:false}).decode(bytes);if(text.includes('�'))text=new TextDecoder('windows-1252').decode(bytes);resolve(text)};reader.onerror=()=>reject(new Error('Falha ao ler o arquivo.'));reader.readAsArrayBuffer(file)})}
 function buildMapping(source){

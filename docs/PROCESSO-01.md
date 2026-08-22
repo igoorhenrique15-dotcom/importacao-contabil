@@ -8,7 +8,25 @@ Receber arquivos do banco e/ou relatório do cliente e transformar colunas difer
 
 - CSV separado por `;`, `,` ou tabulação;
 - TXT delimitado nos mesmos formatos;
-- OFX (extrato bancário), lido a partir dos blocos `STMTTRN`.
+- OFX (extrato bancário), lido a partir dos blocos `STMTTRN`;
+- XLSX (planilha do Excel), primeira aba.
+
+O `.xls` antigo, anterior a 2007, não é lido — a mensagem orienta a salvar como
+`.xlsx` ou CSV.
+
+### Sobre o XLSX
+
+Um `.xlsx` é um ZIP com XML dentro. O leitor usa o que o navegador já traz —
+`DecompressionStream` para o deflate e `DOMParser` para o XML — sem nenhuma
+dependência externa, que este projeto não tem como carregar.
+
+Datas no Excel são números, e só o formato da célula distingue `46081` de uma
+data. O leitor consulta os estilos da planilha para saber quais colunas são de
+data, e converte respeitando o **29/02/1900 fantasma**: esse dia nunca existiu,
+mas o Excel o mantém por compatibilidade, e a contagem fica um dia adiantada a
+partir dele.
+
+Fórmulas não são calculadas — o valor lido é o último que o Excel gravou.
 
 ## Campos normalizados
 
