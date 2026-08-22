@@ -89,6 +89,76 @@ module.exports=function(){
     ok('ainda assim encontra desmembramentos',out.matches.length>0,'matches='+out.matches.length);
   }
 
+  suite('classifyPosting — o que vira lançamento');
+  {
+    // Caso real: SISPAG do Itaú agrupando dois fornecedores, mais uma tarifa
+    // que só existe no extrato, mais um item do relatório ainda não pago.
+    const recs=[
+      bank('05/03/2026',-10000,{descricao:'SISPAG FORNECEDORES'}),
+      bank('05/03/2026',-45.90,{descricao:'TARIFA PACOTE SERVICOS'}),
+      report('05/03/2026',-5000,{descricao:'FORNECEDOR JOAO',documento:'NF-100'}),
+      report('05/03/2026',-5000,{descricao:'FERRO VELHO',documento:'NF-200'}),
+      report('05/03/2026',-800,{descricao:'AINDA NAO PAGO',documento:'NF-300'})
+    ];
+    let x=E.splitPayments(recs,{tolerance:.01});
+    x=E.matchDocuments(x.records,{tolerance:.01});
+    const by=d=>x.records.find(r=>r.descricao===d);
+    eq('o SISPAG agregador não vira lançamento',by('SISPAG FORNECEDORES').posting,'agregador');
+    eq('os dois fornecedores viram lançamento',[by('FORNECEDOR JOAO').contabilizavel,by('FERRO VELHO').contabilizavel],[true,true]);
+    eq('a tarifa, que só existe no extrato, vira lançamento',by('TARIFA PACOTE SERVICOS').posting,'lancamento');
+    eq('item sem contrapartida no extrato fica pendente',by('AINDA NAO PAGO').posting,'pendencia');
+    eq('a tarifa não herda nota fiscal de terceiro',by('TARIFA PACOTE SERVICOS').documento,'');
+
+    const rec=E.reconcileTotals(x.records,{tolerance:.01});
+    eq('o total contabilizado bate com o extrato',rec.confere,true);
+    eq('diferença zerada',rec.diferenca,0);
+    eq('uma pendência registrada',rec.pendencias,1);
+
+    const contas=E.applyAccounts(x.records,{rules:[
+      {keyword:'joao',debit:'2.1.01.001',credit:'1.1.01.002'},
+      {keyword:'ferro velho',debit:'2.1.01.002',credit:'1.1.01.002'},
+      {keyword:'tarifa',debit:'4.1.01.005',credit:'1.1.01.002'}]});
+    const hist=E.generateHistory(contas,{template:'PAG {descricao}',client:'ACME'});
+    const val=E.validate(hist);
+    eq('pendência não vira erro de conta ausente',val.find(r=>r.descricao==='AINDA NAO PAGO').validationStatus,'pendente');
+    eq('o agregador também não vira erro',val.find(r=>r.descricao==='SISPAG FORNECEDORES').validationStatus,'pendente');
+    const out=E.buildLayout(val,{system:'generico'});
+    eq('o arquivo final tem três lançamentos',out.count,3);
+    const soma=out.rows.reduce((s,r)=>s+Math.abs(Number(r.valor)),0);
+    eq('a soma do arquivo bate com o que saiu da conta',soma.toFixed(2),'10045.90');
+    ok('o SISPAG não aparece no arquivo',!out.content.includes('SISPAG'),out.content);
+  }
+  {
+    // Correspondência simples 1 para 1: o mesmo fato não pode ser lançado duas vezes.
+    const recs=[
+      bank('05/03/2026',-500,{descricao:'PAGTO ACME',documento:'NF-1'}),
+      report('05/03/2026',-500,{descricao:'ACME LTDA',documento:'NF-1'})
+    ];
+    let x=E.splitPayments(recs,{tolerance:.01});
+    x=E.matchDocuments(x.records,{tolerance:.01});
+    eq('o movimento do extrato vira espelho',x.records.find(r=>r.origem==='banco').posting,'espelho');
+    eq('o lançamento sai do relatório',x.records.find(r=>r.origem==='relatorio').posting,'lancamento');
+    eq('total contabilizado não duplica',E.reconcileTotals(x.records,{tolerance:.01}).confere,true);
+  }
+  {
+    // Extrato sozinho, sem relatório nenhum: tudo é lançamento.
+    let x=E.splitPayments([bank('05/03/2026',-45.90,{descricao:'TARIFA'})],{tolerance:.01});
+    x=E.matchDocuments(x.records,{tolerance:.01});
+    eq('sem relatório, o extrato é a fonte',x.records[0].posting,'lancamento');
+    eq('e o total confere',E.reconcileTotals(x.records,{tolerance:.01}).confere,true);
+  }
+  {
+    // A conferência precisa acusar quando o arquivo não corresponde ao extrato.
+    const forjado=[{origem:'banco',valor:-1000,posting:'lancamento'},{origem:'relatorio',valor:-1000,posting:'lancamento'}];
+    const rec=E.reconcileTotals(forjado,{tolerance:.01});
+    eq('duplicação é detectada',rec.confere,false);
+    eq('e a diferença é informada',rec.diferenca,-1000);
+  }
+  {
+    const base={data:'05/03/2026',descricao:'X',valor:10,accountDebit:'1.1',accountCredit:'1.1',history:'H',posting:'lancamento'};
+    ok('débito e crédito na mesma conta é erro',E.validate([base])[0].validationErrors.includes('Débito e crédito na mesma conta'));
+  }
+
   suite('matchDocuments');
   {
     const b=bank('05/03/2026',-500,{documento:'NF-1234',descricao:'PAGTO ACME'});
@@ -160,7 +230,7 @@ module.exports=function(){
     const out=E.buildLayout(recs,{system:'generico'});
     eq('exclui os registros com erro',out.count,2);
     eq('cabeçalho genérico',out.content.split('\r\n')[0].replace('﻿',''),'DATA;DEBITO;CREDITO;VALOR;HISTORICO;DOCUMENTO');
-    eq('decimal com vírgula',out.content.split('\r\n')[1].split(';')[3],'-1234,50');
+    eq('valor exportado é sempre positivo',out.content.split('\r\n')[1].split(';')[3],'1234,50');
     ok('arquivo começa com BOM',out.content.charCodeAt(0)===0xFEFF);
     eq('cabeçalho Alterdata',E.buildLayout(recs,{system:'alterdata'}).content.split('\r\n')[0].replace('﻿',''),'DT_LCTO;CTA_DEBITO;CTA_CREDITO;VLR_LCTO;HISTORICO;NR_DOCUMENTO');
     eq('sistema desconhecido cai no genérico',E.buildLayout(recs,{system:'inexistente'}).content.split('\r\n')[0].replace('﻿',''),'DATA;DEBITO;CREDITO;VALOR;HISTORICO;DOCUMENTO');

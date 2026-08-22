@@ -87,11 +87,14 @@ Os oito processos estão implementados e encadeados:
 
 ### Estado real
 
-O fluxo roda ponta a ponta, mas o arquivo do Processo 08 **ainda não pode ser
-importado num sistema contábil**: ele duplica o valor dos pagamentos
-desmembrados e os layouts de saída não seguem especificação oficial de nenhum
-software. Ver [docs/PLANO-DE-EVOLUCAO.md](docs/PLANO-DE-EVOLUCAO.md) para o
-diagnóstico medido e a ordem de correção.
+O fluxo roda ponta a ponta e o arquivo final já confere com o extrato: só vão
+para a exportação os registros que representam um lançamento contábil real, e a
+exportação é recusada quando o total não bate.
+
+Falta o layout do **Questor**, o sistema de destino. Os três layouts atuais não
+seguem especificação oficial de software nenhum, então o arquivo gerado serve
+para conferência, não para importação. Ver
+[docs/PLANO-DE-EVOLUCAO.md](docs/PLANO-DE-EVOLUCAO.md).
 
 ## Segurança
 

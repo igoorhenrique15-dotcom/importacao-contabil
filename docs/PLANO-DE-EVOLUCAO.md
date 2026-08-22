@@ -60,30 +60,44 @@ relatório. Mesmo defeito que o Processo 03 tinha.
 A ordem não é negociável: não adianta acelerar um cálculo que entrega número
 errado, nem ajustar o layout antes de decidir o que é lançamento.
 
-### Fase 0 — Parar de produzir número errado
+### Fase 0 — Parar de produzir número errado — CONCLUÍDA
 
-Bloqueia todo o resto.
+- [x] Regra do que vira lançamento implementada em `classifyPosting`, com os
+      quatro casos (`lancamento`, `agregador`, `espelho`, `pendencia`) descritos
+      em [ARQUITETURA.md](ARQUITETURA.md).
+- [x] O Processo 08 exporta só registros marcados como `lancamento`.
+- [x] Item de relatório sem contrapartida no extrato vira pendência.
+- [x] `reconcileTotals` confere o total contabilizado contra a movimentação do
+      extrato; o Processo 08 recusa a exportação quando não bate.
+- [x] Valor exportado sempre positivo.
+- [x] Corrigido de quebra: uma tarifa bancária herdava a nota fiscal de um
+      fornecedor, porque o documento do melhor candidato era adotado mesmo com
+      confiança abaixo do corte.
 
-- [ ] Definir o que é lançamento: o extrato é o fato financeiro, o relatório é
-      o detalhamento. Num desmembramento, as parcelas **substituem** o
-      pagamento em vez de somar a ele.
-- [ ] Marcar cada registro como contabilizável ou não no Processo 03, e fazer o
-      Processo 08 respeitar essa marca em vez de exportar tudo.
-- [ ] Decidir o destino do item de relatório sem contrapartida no banco.
-- [ ] Conferir partida dobrada no Processo 07, por lançamento e no total do
-      lote, barrando a exportação quando não fechar.
-- [ ] Exportar valor sempre positivo.
+**Verificado:** no caso `SISPAG FORNECEDORES 10.000,00` com João e Ferro Velho a
+5.000,00 cada, mais uma tarifa de 45,90 e um título ainda não pago, o arquivo
+final passou de 3 lançamentos somando R$ 20.045,90 para **3 lançamentos somando
+R$ 10.045,90** — exatamente o que se moveu na conta.
 
-**Pronto quando:** num lote de teste conhecido, a soma do arquivo final bate com
-a soma do extrato e débitos = créditos.
+### Observação sobre partida dobrada
 
-### Fase 1 — Falar a língua do sistema de destino
+No modelo atual cada linha é um lançamento com uma conta de débito, uma de
+crédito e um valor, então débitos e créditos se igualam por construção — a
+conferência seria sempre verdadeira e não provaria nada. O controle que de fato
+faltava, e que foi implementado, é a soma do que será contabilizado contra a
+movimentação do extrato. Quando o modelo passar a aceitar lançamento com
+múltiplas partidas, a conferência de partida dobrada passa a ser necessária.
 
-Os três layouts do código são inventados. Os cabeçalhos `CONTA_DEBITO` e
-`DT_LCTO` não vieram de nenhuma especificação.
+### Fase 1 — Falar a língua do Questor
 
-- [ ] Obter a especificação oficial de importação do sistema usado, ou um
-      arquivo modelo que ele já aceite.
+**Sistema de destino definido: Questor.** Os três layouts do código
+(`generico`, `dominio`, `alterdata`) são inventados — os cabeçalhos
+`CONTA_DEBITO` e `DT_LCTO` não vieram de nenhuma especificação, e nenhum deles
+é o Questor.
+
+- [ ] **Bloqueado:** obter a especificação oficial de importação de lançamentos
+      do Questor, ou um arquivo modelo que ele já aceite hoje.
+- [ ] Implementar o layout do Questor no Processo 08.
 - [ ] Reescrever `buildLayout` para o layout real, incluindo campos
       obrigatórios que hoje não existem (código da empresa, centro de custo,
       filial).
@@ -129,19 +143,15 @@ perder o resto do lote.
 **Pronto quando:** um mês real fechado pelo sistema bate com o fechamento
 manual, e a taxa de acerto é um número conhecido.
 
-## Decisões pendentes
+## Decisões tomadas
 
-Não são técnicas; dependem da rotina do escritório.
-
-1. **Qual é o sistema contábil de destino?** A Fase 1 inteira depende da
-   especificação de importação ou de um arquivo modelo.
-2. **No desmembramento, o que vira lançamento?** A leitura atual é que as
-   parcelas do relatório substituem o pagamento do extrato.
-3. **Item de relatório sem correspondência no banco entra no arquivo?** Sem
-   movimentação financeira, o provável é virar pendência.
-4. **Continua 100% no navegador?** Um backend traria histórico entre máquinas e
-   vários contadores no mesmo lote, junto com autenticação, criptografia,
-   retenção e responsabilidade sobre dado de cliente.
+1. **Sistema contábil de destino: Questor.** Falta a especificação de
+   importação ou um arquivo modelo — é o que bloqueia a Fase 1.
+2. **No desmembramento, os itens do relatório viram lançamento**, e a linha
+   aglutinada do extrato não. Implementado na Fase 0.
+3. **Item de relatório sem correspondência no banco vira pendência** e fica
+   fora do arquivo. Implementado na Fase 0.
+4. **Continua 100% no navegador.** A Fase 2 usa IndexedDB, sem backend.
 
 ## Já concluído
 
@@ -152,3 +162,5 @@ Não são técnicas; dependem da rotina do escritório.
 - 172 verificações automatizadas (`node tests/run.js`) e o fluxo completo
   testado em navegador real (`node tests/e2e.js`).
 - Invalidação em cadeia entre etapas.
+- Fase 0 completa: o arquivo final deixou de duplicar valor e passou a conferir
+  contra o extrato antes de permitir exportação.

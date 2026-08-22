@@ -35,8 +35,10 @@ const server=http.createServer((req,res)=>{
   fs.createReadStream(file).pipe(res);
 });
 
-const CSV_BANCO='DATA;HISTORICO;VALOR;DOCUMENTO\n05/03/2026;PAGAMENTO FORNECEDOR ACME;-1.500,00;NF-100\n05/03/2026;TARIFA BANCARIA;-45,90;\n06/03/2026;RECEBIMENTO CLIENTE BETA;2.300,50;NF-200\n';
-const CSV_REL='DATA;DESCRICAO;VALOR;DOCUMENTO\n05/03/2026;FORNECEDOR ACME PARCELA 1;-500,00;NF-100\n05/03/2026;FORNECEDOR ACME PARCELA 2;-1.000,00;NF-100\n05/03/2026;TARIFA BANCARIA;-45,90;\n06/03/2026;CLIENTE BETA;2.300,50;NF-200\n';
+// Extrato do Itaú: um SISPAG aglutinando dois fornecedores, mais uma tarifa.
+const CSV_BANCO='DATA;HISTORICO;VALOR;DOCUMENTO\n05/03/2026;SISPAG FORNECEDORES;-10.000,00;\n05/03/2026;TARIFA PACOTE SERVICOS;-45,90;\n';
+// Relatório: o detalhe por fornecedor, mais um título ainda não pago.
+const CSV_REL='DATA;DESCRICAO;VALOR;DOCUMENTO\n05/03/2026;FORNECEDOR JOAO;-5.000,00;NF-100\n05/03/2026;FERRO VELHO;-5.000,00;NF-200\n05/03/2026;FORNECEDOR AINDA NAO PAGO;-800,00;NF-300\n';
 
 let fails=0;
 const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(cond?'':' :: '+detail));if(!cond)fails++};
@@ -68,9 +70,9 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
   await page.waitForSelector('#mapping-relatorio select');
   await page.click('#normalize-relatorio');
   const linhas=await page.locator('#output-body tr').count();
-  check('7 linhas normalizadas',linhas===7,'linhas='+linhas);
+  check('5 linhas normalizadas',linhas===5,'linhas='+linhas);
   const totalBanco=await page.locator('#summary .metric').nth(1).innerText();
-  check('total do banco usa o milhar brasileiro',totalBanco.includes('754,60'),totalBanco);
+  check('total do banco usa o milhar brasileiro',totalBanco.includes('10.045,90'),totalBanco);
   const avisos=await page.locator('#summary .metric').nth(3).innerText();
   check('nenhum aviso de valor inválido',avisos.trim().endsWith('0'),avisos.replace(/\n/g,' '));
   await page.click('#save-lot');
@@ -80,8 +82,7 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
   await page.goto(base+'/processos/02-fechamento/');
   await page.click('#run-closing');
   const datas=await page.locator('#closing-body tr').count();
-  check('duas datas analisadas',datas===2,'datas='+datas);
-  check('fechamento sem divergência',(await page.innerText('#closing-status')).includes('sem divergências'),await page.innerText('#closing-status'));
+  check('uma data analisada',datas===1,'datas='+datas);
 
   console.log('\nprocessos 03 a 08 — motores');
   for(const [slug,step] of [['03-desmembramento',3],['04-notas-fiscais',4],['05-contas-contabeis',5],['06-historico',6],['07-validacao',7],['08-layout-importacao',8]]){
@@ -91,12 +92,37 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
     await page.waitForSelector('#engine-result:not([hidden])');
     const msg=(await page.innerText('#engine-message')).replace(/\n/g,' ');
     check('processo 0'+step+' executou',!/não possui dados de entrada|Não foi possível/.test(msg),msg);
-    if(step===3)check('desmembrou o pagamento de 1.500,00',msg.includes('1 pagamento'),msg);
-    if(step===7)check('validação aprovou lançamentos',/[1-9]\d* de \d+ lançamento\(s\) aprovados/.test(msg),msg);
+    if(step===3)check('desmembrou o SISPAG em dois fornecedores',msg.includes('1 pagamento'),msg);
+    if(step===4){
+      check('o total confere com o extrato',msg.includes('confere com o extrato')&&!msg.includes('não confere'),msg);
+      check('a conferência aparece na tela',await page.locator('.reconcile.ok').count()===1);
+      const cards=await page.locator('.validation-card').allInnerTexts();
+      check('3 registros viram lançamento',/^3\D/.test(cards[0].replace(/\n/g,' ')),cards.join(' | '));
+      check('1 pagamento agrupado fora do arquivo',/^1\D/.test(cards[1].replace(/\n/g,' ')),cards.join(' | '));
+      check('1 pendência sinalizada',/^1\D/.test(cards[3].replace(/\n/g,' ')),cards.join(' | '));
+    }
+    if(step===5){
+      // A classificação precisa alcançar os três lançamentos reais.
+      for(const [kw,d,c] of [['joao','2.1.01.001','1.1.01.002'],['ferro','2.1.01.002','1.1.01.002'],['tarifa','4.1.01.005','1.1.01.002']]){
+        await page.fill('#rule-keyword',kw);await page.fill('#rule-debit',d);await page.fill('#rule-credit',c);
+        await page.click('#add-rule');
+      }
+      await page.click('#run-engine');
+      await page.waitForSelector('#engine-result:not([hidden])');
+    }
+    if(step===7){
+      check('validação aprovou lançamentos',/[1-9]\d* de \d+ lançamento\(s\) aprovados/.test(msg),msg);
+      check('o lote confere com o extrato',msg.includes('confere com o extrato')&&!msg.includes('NÃO confere'),msg);
+      const grid=await page.locator('.reconcile-grid dd').allInnerTexts();
+      check('a conferência mostra o valor do extrato',grid[0].includes('10.045,90'),grid.join(' | '));
+      check('e a diferença é zero',/0,00/.test(grid[2]),grid.join(' | '));
+    }
     if(step===8){
       check('layout gerado com lançamentos',/[1-9]\d* lançamento\(s\) preparados/.test(msg),msg);
       const preview=await page.innerText('.layout-preview');
       check('prévia traz o cabeçalho do layout',preview.includes('DATA;DEBITO;CREDITO'),preview.split('\n')[0]);
+      check('o SISPAG agregador não vai para o arquivo',!preview.includes('SISPAG'),preview);
+      check('o valor sai positivo, sem sinal',!/;-\d/.test(preview),preview);
       check('botão de download liberado',!(await page.isDisabled('#download-layout')));
     }
   }

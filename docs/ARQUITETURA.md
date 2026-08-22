@@ -57,6 +57,36 @@ transformação:
 Ao executar novamente uma etapa, os resultados das etapas posteriores são
 invalidados para impedir que uma exportação antiga seja usada com dados novos.
 
+## O que vira lançamento contábil
+
+O extrato prova que o dinheiro se moveu; o relatório diz a quem e por quê.
+Quando os dois descrevem o mesmo fato, o lançamento sai do relatório, que é
+onde estão o fornecedor, o documento e a natureza da despesa. Cada registro
+recebe um campo `posting`:
+
+| `posting` | Origem | Situação | Vai para o arquivo? |
+| --- | --- | --- | --- |
+| `lancamento` | relatório | vinculado a um movimento do extrato | sim |
+| `lancamento` | banco | sem contrapartida no relatório (tarifa, IOF, débito automático) | sim |
+| `agregador` | banco | pagamento agrupado que foi desmembrado | não — quem vai são os itens |
+| `espelho` | banco | já lançado pelo relatório | não — seria o mesmo fato duas vezes |
+| `pendencia` | relatório | sem movimentação correspondente no extrato | não — fica para revisão |
+
+Exemplo. O extrato do Itaú traz `SISPAG FORNECEDORES 10.000,00` numa linha só,
+e o relatório detalha `João 5.000,00` e `Ferro Velho 5.000,00`. O arquivo final
+recebe **dois** lançamentos, um por fornecedor, cada um com sua conta e sua
+nota. A linha do SISPAG não entra: ela é o agregador.
+
+## Conferência contra o extrato
+
+`reconcileTotals` compara a soma dos registros marcados como `lancamento` com a
+movimentação do extrato. Só passam adiante lotes em que os dois valores batem
+dentro da tolerância — é o controle que impede o arquivo de duplicar valor. O
+Processo 08 recusa a exportação quando o lote não confere.
+
+O valor exportado é sempre positivo: a direção do lançamento vem das contas de
+débito e crédito, não do sinal.
+
 ## Conteúdo vindo dos arquivos
 
 Descrições, documentos e datas saem do arquivo do usuário e podem conter
