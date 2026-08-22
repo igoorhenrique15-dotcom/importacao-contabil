@@ -12,3 +12,28 @@
 .reconcile-grid dt{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;opacity:.7}
 .reconcile-grid dd{margin:0;font-size:1.05rem;font-weight:600;font-variant-numeric:tabular-nums}
 .reconcile-grid dd.diff-bad{color:#ef4444}
+
+/* Correção manual de lançamentos (Processos 04, 05 e 06) */
+.edit-cell{
+  display:inline-block;min-width:88px;padding:3px 7px;border-radius:5px;
+  border:1px dashed rgba(148,163,184,.45);cursor:text;
+}
+.edit-cell:hover{border-color:rgba(148,163,184,.85);background:rgba(148,163,184,.08)}
+.edit-cell:focus{outline:2px solid #38bdf8;outline-offset:1px;background:rgba(56,189,248,.1);border-style:solid}
+.edit-cell:empty::before{content:'—';opacity:.45}
+.edit-cell.corrigido,.posting-select.corrigido{
+  border-style:solid;border-color:rgba(34,197,94,.6);background:rgba(34,197,94,.1);
+}
+.posting-select{
+  padding:4px 8px;border-radius:5px;font:inherit;font-size:.86rem;
+  border:1px solid rgba(148,163,184,.45);background:transparent;color:inherit;cursor:pointer;
+}
+.posting-select:focus{outline:2px solid #38bdf8;outline-offset:1px}
+.posting-select option{color:initial}
+.posting-motivo{font-size:.82rem;opacity:.75}
+.reset-override{
+  margin-left:8px;padding:1px 7px;border-radius:5px;font-size:.9rem;line-height:1.5;
+  border:1px solid rgba(148,163,184,.45);background:transparent;color:inherit;cursor:pointer;
+}
+.reset-override:hover{background:rgba(148,163,184,.15)}
+.reset-override:focus-visible{outline:2px solid #38bdf8;outline-offset:1px}

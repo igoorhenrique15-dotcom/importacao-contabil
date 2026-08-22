@@ -54,6 +54,8 @@ Sem o pacote instalado ele se declara pulado em vez de falhar.
 - Processo 02 funcional para fechamento diário banco × relatório;
 - Processos 03 a 08 com motores locais funcionais e resultados persistidos;
 - conteúdo vindo dos arquivos é sempre escapado antes de ir para a tela;
+- contas, histórico e destino de cada lançamento corrigíveis na tela, com a
+  correção sobrevivendo a reexecutar a etapa;
 - contexto do lote e progresso persistidos somente no navegador;
 - só a entrada é gravada; o resultado de cada etapa é recalculado sob demanda,
   o que faz um lote de 10.000 lançamentos caber no navegador;

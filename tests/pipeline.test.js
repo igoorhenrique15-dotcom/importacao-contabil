@@ -61,6 +61,55 @@ module.exports=function(){
     const vazio=lote([],configs);
     eq('lote sem lançamentos devolve lista vazia',P.upTo(vazio,7).length,0);
   }
+  suite('correções manuais');
+  {
+    // Corrigir uma conta na mão precisa valer sobre a regra automática e
+    // sobreviver a reexecutar o processo que a calculou.
+    const corrigido=lote(records,configs);
+    corrigido.rev=2;
+    corrigido.overrides={r1:{accountDebit:'2.1.99.999'}};
+    const linha=P.upTo(corrigido,5).find(r=>r.id==='r1');
+    eq('a conta corrigida vence a regra',linha.accountDebit,'2.1.99.999');
+    eq('a linha é marcada como corrigida',linha.corrigido,['accountDebit']);
+    eq('o resto da linha continua vindo da regra',linha.accountCredit,'1.1.01.002');
+    eq('a correção sobrevive até a validação',P.upTo(corrigido,7).find(r=>r.id==='r1').accountDebit,'2.1.99.999');
+    ok('e chega ao arquivo final',P.resultOf(corrigido,8).content.includes('2.1.99.999'),P.resultOf(corrigido,8).content);
+  }
+  {
+    // Forçar um lançamento a virar pendência tira ele do arquivo e a
+    // conferência precisa acusar que o lote deixou de bater.
+    const forcado=lote(records,configs);
+    forcado.rev=3;
+    forcado.overrides={r1:{posting:'pendencia',contabilizavel:false}};
+    const saida=P.upTo(forcado,7);
+    eq('a linha sai do arquivo',P.resultOf(forcado,8).count,2);
+    // A tela precisa mostrar o mesmo que a etapa seguinte recebe.
+    eq('resultOf também reflete a correção',P.resultOf(forcado,4).records.find(r=>r.id==='r1').posting,'pendencia');
+    const conf=E.reconcileTotals(saida,{tolerance:.01});
+    eq('e a conferência acusa a diferença',conf.confere,false);
+    eq('faltando exatamente o valor retirado',conf.diferenca,5000);
+  }
+  {
+    // O caminho inverso: forçar o agregador a virar lançamento.
+    const forcado=lote(records,configs);
+    forcado.rev=4;
+    forcado.overrides={b1:{posting:'lancamento',contabilizavel:true}};
+    eq('o SISPAG passa a contar',P.upTo(forcado,7).find(r=>r.id==='b1').posting,'lancamento');
+    eq('e o lote deixa de conferir',E.reconcileTotals(P.upTo(forcado,7),{tolerance:.01}).confere,false);
+  }
+  {
+    // Corrigir o histórico quando o modelo não serve.
+    const corrigido=lote(records,configs);
+    corrigido.rev=5;
+    corrigido.overrides={r2:{history:'PAGAMENTO SUCATA CONFORME NF 200'}};
+    eq('o histórico corrigido vale',P.upTo(corrigido,6).find(r=>r.id==='r2').history,'PAGAMENTO SUCATA CONFORME NF 200');
+    ok('e vai para o arquivo',P.resultOf(corrigido,8).content.includes('SUCATA'),'');
+  }
+  {
+    // Sem correções, nada muda.
+    const limpo=lote(records,configs);limpo.rev=6;limpo.overrides={};
+    eq('lote sem correções é idêntico',JSON.stringify(P.upTo(limpo,7)),JSON.stringify(direto));
+  }
   {
     // Um mês real precisa reconstruir em tempo aceitável, já que nada
     // derivado é guardado.

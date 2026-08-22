@@ -127,6 +127,61 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
     }
   }
 
+  console.log('\ncorreção manual na tela');
+  await page.goto(base+'/processos/05-contas-contabeis/');
+  await page.waitForSelector('.edit-cell',{timeout:10000});
+  {
+    const celulas=page.locator('[data-campo="accountDebit"]');
+    check('as contas são editáveis',await celulas.count()===3,String(await celulas.count()));
+    // Corrige a conta de débito da primeira linha.
+    const alvo=celulas.first();
+    await alvo.click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('2.1.99.999');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.edit-cell.corrigido',{timeout:5000});
+    check('a correção é marcada na tela',await page.locator('.edit-cell.corrigido').count()>=1);
+    check('e avisa que o arquivo já considera',(await page.innerText('#engine-message')).includes('Correção salva'),await page.innerText('#engine-message'));
+  }
+  await page.goto(base+'/processos/08-layout-importacao/');
+  await page.waitForSelector('#run-engine');
+  await page.click('#run-engine');
+  await page.waitForSelector('.layout-preview',{timeout:10000});
+  check('a conta corrigida chega ao arquivo final',(await page.innerText('.layout-preview')).includes('2.1.99.999'),await page.innerText('.layout-preview'));
+
+  // Forçar uma linha a sair do arquivo precisa quebrar a conferência.
+  await page.goto(base+'/processos/04-notas-fiscais/');
+  await page.waitForSelector('.posting-select',{timeout:10000});
+  {
+    // Escolhe um lançamento sem nenhuma correção — em qualquer etapa — para
+    // que desfazer atinja só esta linha. O botão desfaz tudo da linha, então
+    // uma linha já corrigida antes perderia aquela correção junto.
+    const alvo=await page.evaluate(()=>{
+      for(const tr of document.querySelectorAll('.result-table tbody tr')){
+        const sel=tr.querySelector('.posting-select');
+        if(sel&&sel.value==='lancamento'&&!tr.querySelector('[data-reset]'))return sel.dataset.posting;
+      }
+      return null;
+    });
+    check('há lançamento sem correção para ajustar',!!alvo,String(alvo));
+    await page.locator('[data-posting="'+alvo+'"]').selectOption('pendencia');
+    await page.waitForSelector('.reconcile.error',{timeout:5000});
+    check('retirar um lançamento quebra a conferência na hora',await page.locator('.reconcile.error').count()===1);
+    // Desfazer exatamente essa linha devolve o estado anterior.
+    await page.locator('[data-reset="'+alvo+'"]').click();
+    await page.waitForSelector('.reconcile.ok',{timeout:5000});
+    check('desfazer a correção volta a conferir',await page.locator('.reconcile.ok').count()===1);
+    check('a correção da conta feita antes continua na linha dela',await page.locator('[data-reset]').count()>=1,String(await page.locator('[data-reset]').count()));
+  }
+  await page.goto(base+'/processos/08-layout-importacao/');
+  await page.waitForSelector('#run-engine');
+  {
+    // Com o lote conferindo de novo, a exportação volta a ser permitida.
+    await page.click('#run-engine');
+    await page.waitForSelector('.layout-preview',{timeout:10000});
+    check('exportação liberada com o lote conferindo',!(await page.isDisabled('#download-layout')));
+  }
+
   console.log('\npersistência: o resultado sobrevive a recarregar');
   // Nada derivado é gravado, então recarregar precisa reconstruir a cadeia.
   await page.goto(base+'/processos/08-layout-importacao/');
@@ -141,6 +196,9 @@ const check=(name,cond,detail)=>{console.log((cond?'  ok   ':'  FAIL ')+name+(co
   {
     const grid=await page.locator('.reconcile-grid dd').allInnerTexts();
     check('a conferência é reconstruída com o valor certo',grid[0].includes('10.045,90'),grid.join(' | '));
+    const overrides=await page.evaluate(()=>Object.values(JSON.parse(localStorage.getItem('contabil-flow:v2')).lots)[0].overrides||{});
+    const contas=Object.values(overrides).filter(o=>o.accountDebit==='2.1.99.999').length;
+    check('a conta corrigida à mão foi gravada e sobrevive',contas===1,JSON.stringify(overrides));
   }
   {
     const tamanho=await page.evaluate(()=>{const v=localStorage.getItem('contabil-flow:v2');return v?v.length:0});

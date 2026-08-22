@@ -1,5 +1,59 @@
 (function(){
   const PREVIEW_LIMIT=500;
+  // Só faz sentido corrigir conta e histórico do que vai virar lançamento.
+  function postable(records){return records.filter(r=>r.posting===undefined||r.posting==='lancamento')}
+  function editCell(record,campo){
+    const corrigido=record.corrigido?.includes(campo);
+    return'<span class="edit-cell'+(corrigido?' corrigido':'')+'" contenteditable="true" role="textbox" tabindex="0"'
+      +' data-edit="'+esc(record.id)+'" data-campo="'+campo+'"'
+      +' aria-label="Editar '+campo+' de '+attr(record.descricao||record.id)+'">'+esc(record[campo]||'')+'</span>';
+  }
+  function postingSelect(record){
+    const opcoes=[['lancamento','Sim'],['pendencia','Não — pendência'],['agregador','Não — agrupador'],['espelho','Não — já lançado']];
+    return'<select class="posting-select'+(record.corrigido?.includes('posting')?' corrigido':'')+'" data-posting="'+esc(record.id)+'"'
+      +' aria-label="Este lançamento vai para o arquivo?">'
+      +opcoes.map(([v,l])=>'<option value="'+v+'"'+(record.posting===v?' selected':'')+'>'+l+'</option>').join('')+'</select>';
+  }
+  function resetBtn(record){
+    if(!record.corrigido?.length)return'';
+    const campos=record.corrigido.join(', ');
+    return'<button type="button" class="reset-override" data-reset="'+esc(record.id)+'" title="Desfazer as correções manuais deste lançamento ('+attr(campos)+')" aria-label="Desfazer as correções manuais deste lançamento">↺</button>';
+  }
+  // As tabelas sao redesenhadas a cada correcao, entao a escuta fica no
+  // container e nao em cada celula.
+  function bindEdits(){
+    const box=document.getElementById('engine-result');if(!box||box.dataset.bound)return;
+    box.dataset.bound='1';
+    box.addEventListener('blur',e=>{
+      const cel=e.target.closest?.('[data-edit]');if(!cel)return;
+      const valor=cel.textContent.trim();
+      if(valor===(cel.dataset.anterior??''))return;
+      salvar(cel.dataset.edit,{[cel.dataset.campo]:valor});
+    },true);
+    box.addEventListener('focus',e=>{const cel=e.target.closest?.('[data-edit]');if(cel)cel.dataset.anterior=cel.textContent.trim()},true);
+    box.addEventListener('keydown',e=>{
+      const cel=e.target.closest?.('[data-edit]');if(!cel)return;
+      if(e.key==='Enter'){e.preventDefault();cel.blur()}
+      if(e.key==='Escape'){cel.textContent=cel.dataset.anterior??'';cel.blur()}
+    });
+    box.addEventListener('change',e=>{
+      const sel=e.target.closest?.('[data-posting]');if(!sel)return;
+      salvar(sel.dataset.posting,{posting:sel.value,contabilizavel:sel.value==='lancamento',postingMotivo:'Definido manualmente.'});
+    });
+    box.addEventListener('click',e=>{
+      const btn=e.target.closest?.('[data-reset]');if(!btn)return;
+      store.clearOverride(btn.dataset.reset);redesenhar('Correção desfeita.');
+    });
+  }
+  function salvar(id,patch){
+    try{store.setOverride(id,patch);redesenhar('Correção salva. O arquivo final já considera esta alteração.')}
+    catch(err){message(err.message,'error')}
+  }
+  function redesenhar(aviso){
+    const atual=store.active();
+    try{renderResult(window.ContabilPipeline.resultOf(atual,step));if(aviso)message(aviso,'ok')}
+    catch(err){message(err.message||'Não foi possível recalcular o lote.','error')}
+  }
   const step=Number(document.body.dataset.process),store=window.ContabilStore,eng=window.ContabilEngines;if(!store||!eng||step<3)return;
   document.head.insertAdjacentHTML('beforeend','<link rel="stylesheet" href="../../assets/css/engine.css"><link rel="stylesheet" href="../../assets/css/tools.css">');
   const host=document.querySelector('.empty-state');if(!host)return;const pageBadge=document.querySelector('.topbar .badge');if(pageBadge){pageBadge.textContent='Motor disponível';pageBadge.classList.add('badge-live')}host.className='engine-shell';host.id='engine-workspace';
@@ -37,15 +91,26 @@
   }
   function renderResult(result){
     const box=document.getElementById('engine-result');box.hidden=false;
+    box.dataset.step=step;
     if(step===3)box.innerHTML=result.matches.length?table(['Data','Pagamento bancário','Valor','Itens encontrados','Diferença','Status'],result.matches.map(r=>[esc(r.date),esc(r.bankDescription),money(r.bankValue),r.parts.map(p=>esc(p.description)+' ('+money(p.value)+')').join('<br>'),money(r.difference),chip('Desmembrado','ok')])):'<div class="engine-empty">Nenhum pagamento agrupado foi identificado automaticamente. Todos os lançamentos seguem preservados para a próxima etapa.</div>';
     if(step===4){
       const rec=eng.reconcileTotals(result.records,lot.configs?.[4]||{});
       box.innerHTML=postingSummary(result.records,rec)
-        +table(['Data','Movimento bancário','Documento','Correspondência','Confiança','Status'],result.matches.map(r=>[esc(r.date),esc(r.bankDescription),esc(r.document||'—'),esc(r.matchedDescription||'Não encontrada'),'<span class="confidence">'+r.confidence+'%</span>',chip(r.status==='confirmado'?'Confirmado':r.status==='revisar'?'Revisar':'Sem correspondência',r.status==='confirmado'?'ok':r.status==='revisar'?'warn':'error')]));
+        +'<p class="engine-note">Discorda de alguma linha? Use a coluna <b>Vai para o arquivo</b> para forçar ou retirar um lançamento. A conferência acima recalcula na hora.</p>'
+        +table(['Data','Lançamento','Documento','Valor','Vai para o arquivo','Por quê'],result.records.map(r=>[
+          esc(r.data),esc(r.descricao),esc(r.documento||'—'),money(r.valor),postingSelect(r),
+          '<span class="posting-motivo">'+esc(r.postingMotivo||'')+'</span>'+resetBtn(r)]),result.records.length);
     }
-    if(step===5)box.innerHTML=table(['Descrição','Valor','Débito','Crédito','Regra','Status'],result.slice(0,PREVIEW_LIMIT).map(r=>[esc(r.descricao),money(r.valor),esc(r.accountDebit||'—'),esc(r.accountCredit||'—'),esc(r.accountRule||'—'),chip(r.statusAccount==='classificado'?'Classificado':'Pendente',r.statusAccount==='classificado'?'ok':'warn')]),result.length);
-    if(step===6)box.innerHTML=table(['Data','Documento','Histórico gerado','Status'],result.slice(0,PREVIEW_LIMIT).map(r=>[esc(r.data),esc(r.documento||'—'),esc(r.history),chip('Gerado','ok')]),result.length);
+    if(step===5)box.innerHTML='<p class="engine-note">As contas podem ser corrigidas direto na tabela. Uma correção manual vale sobre a regra e sobrevive a reexecutar o processo.</p>'
+      +table(['Descrição','Valor','Débito','Crédito','Regra','Status'],postable(result).slice(0,PREVIEW_LIMIT).map(r=>[
+        esc(r.descricao),money(r.valor),editCell(r,'accountDebit'),editCell(r,'accountCredit'),esc(r.accountRule||'—'),
+        chip(r.corrigido?.length?'Corrigido':r.statusAccount==='classificado'?'Classificado':'Pendente',r.corrigido?.length?'ok':r.statusAccount==='classificado'?'ok':'warn')+resetBtn(r)]),postable(result).length);
+    if(step===6)box.innerHTML='<p class="engine-note">O histórico de cada lançamento pode ser reescrito na tabela quando o modelo não servir.</p>'
+      +table(['Data','Documento','Histórico','Status'],postable(result).slice(0,PREVIEW_LIMIT).map(r=>[
+        esc(r.data),esc(r.documento||'—'),editCell(r,'history'),
+        chip(r.corrigido?.includes('history')?'Corrigido':'Gerado','ok')+resetBtn(r)]),postable(result).length);
     if(step===7){const valid=result.filter(r=>r.validationStatus==='valido').length,warn=result.filter(r=>r.validationStatus==='aviso').length,error=result.filter(r=>r.validationStatus==='erro').length;const pend=result.filter(r=>r.validationStatus==='pendente').length,conf=eng.reconcileTotals(result,{tolerance:.01});box.innerHTML='<div class="validation-grid"><div class="validation-card"><strong>'+valid+'</strong><span>válidos</span></div><div class="validation-card"><strong>'+warn+'</strong><span>com avisos</span></div><div class="validation-card"><strong>'+error+'</strong><span>com erros</span></div><div class="validation-card"><strong>'+pend+'</strong><span>não contabilizados</span></div></div>'+reconcileBox(conf)+table(['Data','Descrição','Valor','Resultado','Detalhes'],result.slice(0,PREVIEW_LIMIT).map(r=>[esc(r.data),esc(r.descricao),money(r.valor),chip(r.validationStatus,r.validationStatus==='valido'?'ok':r.validationStatus==='aviso'?'warn':'error'),esc([...r.validationErrors,...r.validationWarnings].join(' · ')||'Sem pendências')]),result.length)}
+    bindEdits();
     if(step===8){layoutResult=result;box.innerHTML='<div class="validation-grid"><div class="validation-card"><strong>'+result.count+'</strong><span>lançamentos liberados</span></div><div class="validation-card"><strong>'+esc(result.system)+'</strong><span>layout selecionado</span></div></div><pre class="layout-preview">'+esc(result.content.split('\r\n').slice(0,8).join('\n'))+'</pre>';document.getElementById('download-layout').disabled=!result.count}
   }
   function renderRules(){const list=document.getElementById('rule-list');list.innerHTML=rules.map((r,i)=>'<div class="rule-row"><span><strong>'+esc(r.keyword)+'</strong></span><span>Débito: '+esc(r.debit)+'</span><span>Crédito: '+esc(r.credit)+'</span><button type="button" class="rule-remove" data-remove="'+i+'" aria-label="Remover regra '+esc(r.keyword)+'">×</button></div>').join('');list.querySelectorAll('[data-remove]').forEach(b=>b.addEventListener('click',()=>{rules.splice(Number(b.dataset.remove),1);renderRules()}))}

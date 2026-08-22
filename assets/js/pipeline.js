@@ -29,19 +29,30 @@
     if(step===5)saida=eng().applyAccounts(anterior,cfg);
     if(step===6)saida=eng().generateHistory(anterior,cfg);
     if(step===7)saida=eng().validate(anterior);
+    saida=aplicarCorrecoes(saida,lot.overrides);
     b.set(k,saida);
     return saida;
+  }
+  // A correcao manual vence a regra automatica, e por isso e reaplicada ao fim
+  // de cada etapa: reexecutar o Processo 05 nao desfaz uma conta corrigida a
+  // mao. O campo `corrigido` marca a linha para a interface.
+  function aplicarCorrecoes(records,overrides){
+    if(!overrides||!Object.keys(overrides).length)return records;
+    return records.map(r=>{const patch=overrides[r.id];return patch?{...r,...patch,corrigido:Object.keys(patch)}:r});
   }
   // Resultado completo de uma etapa, com os extras que a tela precisa
   // (as correspondências do 03 e do 04, o resumo por data do 02).
   function resultOf(lot,step){
     const entrada=upTo(lot,step-1),cfg=lot.configs?.[step]||{};
-    if(step===2)return eng().closeDaily(entrada,cfg);
-    if(step===3)return eng().splitPayments(entrada,cfg);
-    if(step===4)return eng().matchDocuments(entrada,cfg);
+    // As correcoes tambem valem aqui: o que a tela mostra tem de ser o mesmo
+    // que a etapa seguinte recebe.
+    const comCorrecoes=r=>({...r,records:aplicarCorrecoes(r.records,lot.overrides)});
+    if(step===2)return comCorrecoes(eng().closeDaily(entrada,cfg));
+    if(step===3)return comCorrecoes(eng().splitPayments(entrada,cfg));
+    if(step===4)return comCorrecoes(eng().matchDocuments(entrada,cfg));
     if(step===8)return eng().buildLayout(upTo(lot,7),cfg);
     return upTo(lot,step);
   }
   function clear(){cache=new WeakMap()}
-  window.ContabilPipeline={upTo,resultOf,clear};
+  window.ContabilPipeline={upTo,resultOf,aplicarCorrecoes,clear};
 })();

@@ -31,6 +31,21 @@ dez mil lançamentos ocupam 3,2 MB. Como os motores são rápidos, refazer a
 cadeia inteira (cerca de 1 s para dez mil lançamentos, com cache em memória
 depois disso) é mais barato do que armazená-la.
 
+## Correção manual
+
+Nenhum motor acerta sempre. Uma correção feita na tela é gravada em
+`lot.overrides[idDoLançamento]` e **faz parte da entrada**, não do resultado:
+`pipeline.js` a reaplica ao fim de cada etapa, então reexecutar o Processo 05
+não desfaz uma conta corrigida à mão. Quem revisou sabe mais que a regra.
+
+Dá para corrigir conta de débito e crédito (Processo 05), histórico (Processo
+06) e se um registro vai ou não para o arquivo (Processo 04). Forçar uma linha
+a sair do arquivo faz a conferência contra o extrato acusar a diferença na
+hora — a correção não escapa do controle.
+
+O botão de desfazer remove **todas** as correções daquele lançamento, não só a
+da etapa em que se está.
+
 Consequência prática: **os motores precisam ser determinísticos**. Mesma
 entrada e mesma configuração têm de produzir sempre a mesma saída, senão o que
 o usuário vê ao reabrir a página difere do que ele viu ao executar. Um teste

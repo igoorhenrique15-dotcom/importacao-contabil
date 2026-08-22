@@ -137,17 +137,26 @@ se um lote precisar passar de 15.000 lançamentos.
 **Verificado:** o fluxo completo roda no navegador e o resultado sobrevive a
 recarregar a página, reconstruído a partir de 3.951 bytes de estado gravado.
 
-### Fase 3 — Deixar o contador corrigir
+### Fase 3 — Deixar o contador corrigir — CONCLUÍDA
 
-Nenhum motor automático acerta 100%, e hoje não há como consertar sem refazer.
+- [x] Editar conta de débito e crédito (Processo 05) e histórico (Processo 06)
+      direto na tabela.
+- [x] Forçar ou retirar um lançamento do arquivo (Processo 04), o que cobre o
+      caso do desmembramento sugerido errado.
+- [x] A correção vale sobre a regra e **sobrevive a reexecutar a etapa**: ela é
+      gravada como entrada, em `lot.overrides`, e reaplicada ao fim de cada
+      etapa pelo pipeline.
+- [x] Botão de desfazer por lançamento, com a conferência contra o extrato
+      recalculando na hora.
+- [ ] Guardar as regras de conta por cliente, e não por lote. **Pendente.**
 
-- [ ] Editar conta, histórico e documento linha a linha.
-- [ ] Desfazer um desmembramento sugerido e refazer à mão.
-- [ ] Marcar linha como revisada e protegê-la contra reprocessamento.
-- [ ] Guardar as regras de conta por cliente.
+**Verificado no navegador:** corrigir uma conta na tela leva o novo valor ao
+arquivo final; retirar um lançamento faz a conferência acusar a diferença
+imediatamente; desfazer devolve o lote ao estado que conferia; e a correção
+sobrevive a recarregar a página.
 
-**Pronto quando:** dá para corrigir uma sugestão errada sem sair da tela e sem
-perder o resto do lote.
+Uma correção manual não escapa do controle: se ela desequilibrar o lote contra
+o extrato, o Processo 08 recusa a exportação do mesmo jeito.
 
 ### Fase 4 — Validar contra a realidade
 
@@ -182,3 +191,5 @@ manual, e a taxa de acerto é um número conhecido.
   contra o extrato antes de permitir exportação.
 - Fase 2 completa: o Processo 04 deixou de travar e um mês real cabe no
   navegador, com o resultado reconstruído ao reabrir a página.
+- Fase 3 completa: contas, histórico e destino de cada lançamento podem ser
+  corrigidos na tela, e a correção vence a regra automática.

@@ -73,6 +73,13 @@ O valor sai sempre positivo; a direção vem das contas de débito e crédito.
 > ou de um arquivo modelo que o sistema aceite. Enquanto isso não acontecer, o
 > arquivo gerado serve para conferência, não para importação.
 
+## Correção manual
+
+Os Processos 04, 05 e 06 permitem corrigir o resultado direto na tabela — se um
+registro vai para o arquivo, as contas e o histórico. A correção vale sobre a
+regra automática e sobrevive a reexecutar a etapa. Ver
+[ARQUITETURA.md](ARQUITETURA.md).
+
 ## Prévia dos resultados
 
 As tabelas dos processos 05, 06 e 07 exibem no máximo 500 lançamentos e
